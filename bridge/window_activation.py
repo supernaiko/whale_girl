@@ -2,6 +2,20 @@
 """不合并输入队列的窗口激活兼容层。"""
 
 
+def unlock_foreground():
+    import win32api
+
+    # 正在按修饰键或鼠标时，合成 Alt 会干扰用户的操作。
+    if any(win32api.GetAsyncKeyState(key) & 0x8000
+           for key in (0x10, 0x11, 0x12, 0x5B, 0x5C, 0x01, 0x02)):
+        return False
+    try:
+        win32api.keybd_event(0x12, 0, 0, 0)
+    finally:
+        win32api.keybd_event(0x12, 0, 2, 0)
+    return True
+
+
 def activate(hwnd, *, retry=False):
     import ctypes
     from ctypes import wintypes
@@ -21,21 +35,62 @@ def activate(hwnd, *, retry=False):
     try:
         if retry:
             import time
-            import win32api
-            import win32con
 
-            modifiers = (win32con.VK_MENU, win32con.VK_CONTROL, win32con.VK_SHIFT,
-                         win32con.VK_LWIN, win32con.VK_RWIN)
-            if not any(win32api.GetAsyncKeyState(key) & 0x8000 for key in modifiers):
-                # 和窗口还原用同一办法解除前台锁，避开用户正在按的组合键。
-                try:
-                    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-                finally:
-                    win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+            if unlock_foreground():
                 time.sleep(0.04)
         win32gui.SetForegroundWindow(hwnd)
     except Exception:
         return False
+    return win32gui.GetForegroundWindow() == hwnd
+
+
+def _steal_foreground(hwnd):
+    """仅发送恢复时短暂绑定输入线程，退出前必须拆开。"""
+    import win32api
+    import win32gui
+    import win32process
+
+    attached = []
+    current = win32api.GetCurrentThreadId()
+    try:
+        if not unlock_foreground():
+            return False
+        foreground = win32gui.GetForegroundWindow()
+        threads = [win32process.GetWindowThreadProcessId(hwnd)[0]]
+        if foreground:
+            threads.append(win32process.GetWindowThreadProcessId(foreground)[0])
+        for thread in dict.fromkeys(threads):
+            if thread and thread != current:
+                win32process.AttachThreadInput(current, thread, True)
+                attached.append(thread)
+        win32gui.SetForegroundWindow(hwnd)
+    finally:
+        for thread in reversed(attached):
+            try:
+                win32process.AttachThreadInput(current, thread, False)
+            except Exception:
+                # 一个窗口线程已经退出时，仍须尝试拆开其它绑定。
+                pass
+    return win32gui.GetForegroundWindow() == hwnd
+
+
+def activate_target(hwnd):
+    """发送路径显式恢复前台；后台探测仍使用原来的异步激活。"""
+    import win32gui
+
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        return False
+    win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE
+    if win32gui.GetForegroundWindow() != hwnd:
+        try:
+            _steal_foreground(hwnd)
+        except Exception:
+            # 前台线程可能在取句柄后退出，仍尝试普通激活并以回读为准。
+            pass
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            pass
     return win32gui.GetForegroundWindow() == hwnd
 
 

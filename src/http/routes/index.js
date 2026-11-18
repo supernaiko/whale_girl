@@ -11,10 +11,12 @@ const modules = [
   require('./wechat'),
   require('./config'),
   require('./debug'),
+  require('./cost'),
   require('./care'),
   require('./chat'),
   require('./bridge'),
   require('./sendFile'),
+  require('./sendText'),
   require('./stickers'),
   require('./reminders'),
   require('./diary'),
@@ -23,6 +25,7 @@ const modules = [
   require('./memory'),
   require('./moments'),
   require('./plugins'),
+  require('./yxn'),
 ];
 
 /** 组装路由表：每个领域一个文件，server 只负责启动。 */

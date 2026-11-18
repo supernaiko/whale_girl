@@ -213,7 +213,8 @@ const DEFAULT_CONFIG = {
   // 不主动定时读取，只在主人问起或启动器手动读取时读。
   moments: {
     autoLike: true, autoLikeMaxPerDay: 3, autoReadEveryHours: 0,
-    publishFeatureEnabled: false, publishEnabled: false, publishIntervalHours: 6, publishMaxPerDay: 1,
+    publishFeatureEnabled: false, publishEnabled: false, publishIntervalHours: 6, publishMaxPerDay: 2,
+    activeStart: '08:00', activeEnd: '23:30', minGapHours: 3, attemptProbability: 0.25, muteDate: '',
     publishAccount: '', publishWithImage: false,
   },
   // 别人发链接时，读一下标题/摘要/文章正文（视频只读得到文案）

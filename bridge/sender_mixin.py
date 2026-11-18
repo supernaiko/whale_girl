@@ -6,6 +6,38 @@ from emoticon import outcome, parse_request, send_pasted_emoticon
 
 class SenderMixin:
 
+    def _with_target_window(self, send):
+        # 定位函数负责恢复和抢前台，旧包装器的预激活失败不应抢先拦下恢复机会。
+        snap = self.snapshot_win_state() if G.BACKGROUND_SEND else None
+        try:
+            return send()
+        finally:
+            if snap:
+                self.restore_win_state(snap)
+
+    def _locate_text_chat(self, who, username=''):
+        from sticker_transport import resolve_file_target
+        from targeting import locate_and_activate
+
+        keys = self.aliases_for(username, who) if username else [who]
+        latest_keys = list(keys)
+
+        def refresh_aliases():
+            nonlocal latest_keys
+            # 按内部 ID 重读联系人，避免旧昵称/备注缓存让改名后的会话永远搜不到。
+            fresh = resolve_file_target(self.db, username)[1] if username else keys
+            # 未命名群原来就使用成员组合名；联系人库只有群 ID 时保留已有候选。
+            latest_keys = list(keys if username.endswith('@chatroom') and set(fresh) == {username} else fresh)
+            return latest_keys
+
+        hwnd, uia = locate_and_activate(
+            self, who, keys,
+            gate=lambda: (self.account_send_allowed('UIA')
+                          and self.send_policy_allows(username, who)),
+            refresh_aliases=refresh_aliases, log=G.log)
+        self.UIA_CACHE['u'] = uia
+        return hwnd, uia, latest_keys
+
     def send_emoticon(self, chat, code, active=lambda: True):
         """专用的原生表情发送通道，避免通用文本通道把代码原样发出去。"""
         try:
@@ -36,21 +68,26 @@ class SenderMixin:
                 def account_valid():
                     return (self.account_send_allowed('内置表情') and self.attachment_account_valid(hwnd))
 
-                if not hwnd or not account_valid():
-                    return outcome('failed', 'target_unavailable')
                 desktop = G.WindowsDesktop()
                 if not desktop.foreground(hwnd):
                     snap = self.snapshot_win_state()
-                    if not self.force_foreground(hwnd) or not desktop.foreground(hwnd):
-                        return outcome('failed', 'foreground_unavailable')
                 with self.gui_lock:
-                    gui = self.gui
-                    if not active() or not account_valid():
+                    if not active():
                         return outcome('failed', 'send_blocked')
-                    if gui is None or not gui.use_window(hwnd) or int(gui.main_hwnd) != hwnd:
-                        return outcome('failed', 'target_unavailable')
-                    uia = gui._get_uia()
-                    if uia is None or not self.open_attachment_chat(uia, shown, aliases):
+                    from targeting import TargetUnavailable, locate_and_activate
+                    try:
+                        def refresh_aliases():
+                            nonlocal aliases
+                            _, aliases = G.resolve_sticker_target(self.db, shown, canonical)
+                            return aliases
+
+                        hwnd, uia = locate_and_activate(
+                            self, shown, aliases,
+                            gate=lambda: (allowed() and self.account_send_allowed('内置表情')
+                                          and self.sticker_activity_allowed(canonical)),
+                            account_valid=self.attachment_account_valid,
+                            refresh_aliases=refresh_aliases, log=G.log)
+                    except TargetUnavailable:
                         return outcome('failed', 'target_unavailable')
                     return send_pasted_emoticon(uia, desktop, hwnd, aliases, self.db, canonical,
                                                 code, allowed, account_valid, G.log_warn)
@@ -135,49 +172,11 @@ class SenderMixin:
 
     def uia_send(self, text, who, username=''):
         """优先用 UIA 发送：不依赖 OCR 找发送按钮，成功后返回 True。"""
-        if not self.account_send_allowed('UIA'):
-            return False
-        if not self.wechat_window_alive():
-            with self.gui_lock:
-                self.UIA_CACHE['u'] = None
-            return False
-        u = self.UIA_CACHE['u']
+        from targeting import TargetUnavailable
+
         try:
             with self.gui_lock:
-                fresh = self.gui._get_uia() if self.gui is not None else None
-            if fresh is not None:
-                u = fresh
-            self.UIA_CACHE['u'] = u
-        except Exception:
-            u = self.UIA_CACHE['u']
-        if u is None:
-            return False
-        if G.BACKGROUND_SEND and (not G.STICKER_TEST_ON):
-            self.install_quiet_uia(u)
-        keys = self.aliases_for(username, who) if username else [who]
-        try:
-            cur = None
-            try:
-                cur = u.current_chat()
-            except Exception:
-                pass
-            hit_cur = cur == who or any((cur == k for k in keys if k))
-            if not hit_cur and username:
-                hit_cur = bool(cur) and self.open_cache.get(username) == cur
-            if not hit_cur:
-                if not u.open_chat(keys):
-                    try:
-                        u.back_to_chat_tab()
-                    except Exception:
-                        pass
-                    if not u.open_chat(keys):
-                        return False
-                if username:
-                    try:
-                        self.open_cache[username] = u.current_chat() or ''
-                        G.log('UIA 已切到会话：', G.safe_name(self.open_cache[username]))
-                    except Exception:
-                        pass
+                _, u, keys = self._locate_text_chat(who, username)
             self._require_chat_identity(u, who, keys, 'UIA')
             t_open = G.time.time()
             sent_ok = False
@@ -189,13 +188,11 @@ class SenderMixin:
                 sent_ok = False
             if not sent_ok:
                 try:
-                    u.back_to_chat_tab()
-                    if not u.open_chat(keys):
-                        sent_ok = False
-                    else:
-                        self._require_chat_identity(u, who, keys, 'UIA 重试')
-                        sent_ok = bool(u.send_text(text))
-                except G.ChatIdentityError:
+                    with self.gui_lock:
+                        _, u, keys = self._locate_text_chat(who, username)
+                    self._require_chat_identity(u, who, keys, 'UIA 重试')
+                    sent_ok = bool(u.send_text(text))
+                except (G.ChatIdentityError, TargetUnavailable):
                     raise
                 except Exception:
                     sent_ok = False
@@ -209,6 +206,10 @@ class SenderMixin:
                     G.log('UIA 报发送成功但输入框还有 %d 字，补按一次回车' % len(leftover))
                     self.press_enter(False)
                 return True
+        except TargetUnavailable:
+            G.log('[delivery] stage=resolve_target result=failed reason=target_unavailable')
+            # 已经用尽三轮导航，交给 send_text 现有的身份异常出口停止换通道重试。
+            raise G.ChatIdentityError('target_unavailable') from None
         except G.ChatIdentityError:
             raise
         except Exception as e:
@@ -241,15 +242,12 @@ class SenderMixin:
         return False
 
     def keyboard_send(self, text, chat_display_name, chat_username=''):
-        """完全不依赖 UIA 的发送通道：Ctrl+F 搜索会话 → 粘贴 → 回车 → 回读数据库确认。
+        """统一核验会话后，用键盘粘贴正文并回读数据库确认。
 
-        为什么需要它：UIA 依赖微信的 accessibility gate，微信跑久了/窗口状态怪的时候
-        整条路都会挂（见 recover_uia 的注释）。键盘通道只用 Win32 按键 + 剪贴板，
-        走的是微信自己的搜索框，不碰 accessibility。
+        UIA 能读会话但不能发送时，仍可用 Win32 按键和剪贴板输入；定位和身份核验
+        继续共用 UIA 的只读证据，不能向未知会话发送。
         代价：会抢前台、慢一些，所以只在 UIA 真的发不出去时用。
         """
-        if not self.account_send_allowed('键盘通道'):
-            return False
         try:
             import ctypes
             import win32api
@@ -260,28 +258,11 @@ class SenderMixin:
         except Exception as e:
             G.log('键盘通道不可用（缺少 win32 模块）：', repr(e))
             return False
-        hwnd = int(self.ACCOUNT.get('hwnd') or 0) or self.find_weixin_hwnd()
-        if not hwnd:
-            G.log('键盘通道：找不到微信主窗')
-            return False
-
-        def fg():
-            return user32.GetForegroundWindow()
-        if fg() != hwnd:
-            user32.keybd_event(win32con.VK_MENU, 0, 0, 0)
-            G.time.sleep(0.05)
-            user32.SetForegroundWindow(hwnd)
-            G.time.sleep(0.2)
-            user32.keybd_event(win32con.VK_MENU, 0, 2, 0)
-            G.time.sleep(0.2)
-        if fg() != hwnd:
-            try:
-                user32.SwitchToThisWindow(hwnd, True)
-                G.time.sleep(0.3)
-            except Exception:
-                pass
-        if fg() != hwnd:
-            G.log('键盘通道：抢不到前台，放弃这次（UIA 也不可用时这条就发不出去了）')
+        from targeting import TargetUnavailable
+        try:
+            with self.gui_lock:
+                hwnd, uia, keys = self._locate_text_chat(chat_display_name, chat_username)
+        except TargetUnavailable:
             return False
 
         def set_clip(t):
@@ -332,50 +313,12 @@ class SenderMixin:
                 user32.keybd_event(m, 0, 2, 0)
             G.time.sleep(0.12)
 
-        def confirmed_target():
-            """打开会话后确认「现在开着的到底是谁」。
-
-            键盘通道是模拟按键，搜不到人时回车会落到「当前那个会话」上，
-            正文就直接发给别人了 —— 2026-10-25 12:21 的日志里就出现过
-            「键盘通道：按键发了，但数据库里没确认到（可能发到了别的会话）」。
-            这里用 UIA 的只读能力核对（读会话名在「能读不能发」的假死状态下依然可用）；
-            读不到就宁可这条失败，也不盲发 —— 私聊内容发错人比晚回一条严重得多。
-            返回 (是否匹配, 当前会话名)。
-            """
-            try:
-                u = self.gui._get_uia() if self.gui is not None else None
-                cur = u.current_chat() if u is not None else None
-            except Exception:
-                cur = None
-            if not cur:
-                return (None, None)
-            cands = {chat_display_name}
-            try:
-                if chat_username:
-                    cands.update(self.aliases_for(chat_username, chat_display_name))
-                    cached = self.open_cache.get(chat_username)
-                    if cached:
-                        cands.add(cached)
-            except Exception:
-                pass
-            return (cur in cands, cur)
         t_start = G.time.time()
         saved_clip = get_clip()
         try:
-            tap(ord('F'), (win32con.VK_CONTROL,))
-            G.time.sleep(0.5)
-            set_clip(chat_display_name)
-            tap(ord('V'), (win32con.VK_CONTROL,))
-            G.time.sleep(0.8)
-            tap(win32con.VK_RETURN)
-            G.time.sleep(0.9)
-            matched, cur = confirmed_target()
-            if matched is None:
-                G.log('键盘通道：读不到当前会话名，为防发错人这次不发')
-                raise G.ChatIdentityError('键盘通道读不到当前会话名')
-            if not matched:
-                G.log('键盘通道：打开的是「%s」而不是「%s」，为防发错人这次不发' % (G.safe_name(cur), G.safe_name(chat_display_name)))
-                raise G.ChatIdentityError('键盘通道打开的是 %s 而不是 %s' % (G.safe_name(cur), G.safe_name(chat_display_name)))
+            if win32gui.GetForegroundWindow() != hwnd:
+                return False
+            self._require_chat_identity(uia, chat_display_name, keys, '键盘通道')
             set_clip(text)
             tap(ord('V'), (win32con.VK_CONTROL,))
             G.time.sleep(0.4)
@@ -448,6 +391,8 @@ class SenderMixin:
         return False
 
     def send_text(self, text, chat_display_name, chat_username='', force=False, quote_latest=False):
+        from targeting import TargetUnavailable
+
         if chat_username and self.chat_paused(chat_username):
             G.log('跳过已失效的会话：', G.safe_name(chat_display_name))
             return False
@@ -469,8 +414,7 @@ class SenderMixin:
             return False
         chat_display_name = resolved
         display = G.safe_name(chat_display_name)
-        if not self.account_send_allowed('发送'):
-            return False
+        account_ready = self.account_send_allowed('发送')
         with self.send_lock, G._SendStateScope(len(text)):
             if not self.send_policy_allows(chat_username, chat_display_name):
                 return False
@@ -478,7 +422,7 @@ class SenderMixin:
                 return False
             t_start = G.time.time()
             allow_mark_dead = True
-            if not G.STICKER_TEST_ON and G.BG_SEND.get('enabled', True):
+            if account_ready and not G.STICKER_TEST_ON and G.BG_SEND.get('enabled', True):
                 G.SEND_STATE['start'] = G.time.time()
                 try:
                     if self.bg_send(text, chat_display_name, chat_username):
@@ -508,11 +452,18 @@ class SenderMixin:
                 try:
                     # 不传 target_text：走上游 1.2.10 的「引用最近一条」路径
                     # （UIA 行控件 + 像素重心），图片/表情/换行也不会 OCR 匹配失败。
-                    if self.with_window_on_top(lambda: self.gui.quote_msg(
-                            text, who=chat_display_name, verify=False)):
+                    def quote_send():
+                        with self.gui_lock:
+                            _, u, keys = self._locate_text_chat(chat_display_name, chat_username)
+                        self._require_chat_identity(u, chat_display_name, keys, '引用回复')
+                        return self.gui.quote_msg(text, who=u.current_chat(), verify=False)
+
+                    if self._with_target_window(quote_send):
                         G.log('引用回复成功 →', display)
                         return True
                     G.log('引用回复未确认浮层/发送，回退普通发送：', display)
+                except (TargetUnavailable, G.ChatIdentityError):
+                    return False
                 except Exception as e:
                     G.log('引用回复失败，回退普通发送：', repr(e))
             uia_available = False
@@ -524,7 +475,7 @@ class SenderMixin:
                 t_att = G.time.time()
                 G.SEND_STATE['start'] = G.time.time()
                 try:
-                    if self.with_window_on_top(lambda: self.uia_send(text, chat_display_name, chat_username)):
+                    if self._with_target_window(lambda: self.uia_send(text, chat_display_name, chat_username)):
                         self.fail_streak.pop(chat_username, None)
                         G.log('发送成功（%.1fs）→ %s' % (G.time.time() - t_start, display))
                         return True
@@ -538,7 +489,7 @@ class SenderMixin:
             if uia_available:
                 if self.recover_uia('发送失败'):
                     try:
-                        if self.with_window_on_top(lambda: self.uia_send(text, chat_display_name, chat_username)):
+                        if self._with_target_window(lambda: self.uia_send(text, chat_display_name, chat_username)):
                             self.fail_streak.pop(chat_username, None)
                             G.log('重新激活 UIA 后发送成功（%.1fs）→ %s' % (G.time.time() - t_start, display))
                             return True

@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """Bridge runtime mixin: StickerMixin."""
 import engine as G
+from targeting import TargetUnavailable, locate_and_activate
 
 
 class StickerMixin:
 
     def open_attachment_chat(self, uia, shown, aliases):
-        if G.sticker_alias_match(uia.current_chat(), aliases):
-            return True
-        uia.open_chat([shown] + [alias for alias in aliases if alias != shown])
-        for _ in range(8):
-            G.time.sleep(0.25)
-            if G.sticker_alias_match(uia.current_chat(), aliases):
-                return True
-        return False
+        try:
+            _, current = locate_and_activate(
+                self, shown, aliases, gate=lambda: self.account_send_allowed('附件定位'),
+                account_valid=self.attachment_account_valid, log=G.log)
+            return current is uia
+        except TargetUnavailable:
+            return False
 
     def attachment_account_valid(self, hwnd):
         compat = self._compat_mod()
@@ -81,7 +81,7 @@ class StickerMixin:
             return False
 
     def send_sticker(self, path, chat_display_name, chat_username='', generation='', job_id=''):
-        """一次性、无导航的图片粘贴；只能向已在前台打开且聚焦的精确会话发送。"""
+        """等已绑定微信进入前台，核验目标会话后只提交一次图片。"""
         if not job_id or not self.sticker_gate(generation, job_id):
             return G.sticker_result('cancelled', 'stickers are disabled or generation expired')
         with self.send_lock, G._SendStateScope(len(str(path or ''))):
@@ -91,28 +91,13 @@ class StickerMixin:
                 return G.sticker_result('failed', 'an uncertain attachment draft must be cleared manually before further sends')
             if not self.sticker_activity_allowed(chat_username):
                 return G.sticker_result('failed', 'activity gate rejected the sticker')
-            if not self.account_send_allowed('表情包') or not self.ACCOUNT.get('verified') or (not self.wechat_window_alive()) or (not self.sticker_account_evidence_allowed()):
-                return G.sticker_result('failed', 'target account window could not be verified')
             hwnd = int(self.ACCOUNT.get('hwnd') or 0)
             snap = None
             try:
                 desktop = G.WindowsDesktop()
                 if not desktop.foreground(hwnd):
                     snap = self.snapshot_win_state()
-                    if not self.force_foreground(hwnd) or not desktop.foreground(hwnd):
-                        try:
-                            self.restore_win_state(snap)
-                        except Exception:
-                            pass
-                        snap = None
-                        return G.sticker_result('failed', 'could not bring the WeChat window to the foreground')
-                    G.log_throttled('sticker-foreground', '表情包：微信不在前台，先切过去（发完会把窗口还原）', ttl=120)
             except Exception:
-                try:
-                    self.restore_win_state(snap)
-                except Exception:
-                    pass
-                snap = None
                 return G.sticker_result('failed', 'foreground safety checks are unavailable')
             try:
                 with self.gui_lock:
@@ -129,22 +114,24 @@ class StickerMixin:
                             return G.sticker_result('failed', 'an uncertain attachment draft must be cleared manually before further sends')
                         if not self.sticker_activity_allowed(canonical):
                             return G.sticker_result('failed', 'target or activity gate rejected the sticker')
-                        if not self.sticker_gate(generation, job_id) or not desktop.foreground(hwnd):
+                        if not self.sticker_gate(generation, job_id):
                             return G.sticker_result('cancelled', 'send gates changed before binding')
-                        if not current_gui.use_window(hwnd) or int(current_gui.main_hwnd) != hwnd:
-                            return G.sticker_result('failed', 'unable to bind the verified account window')
-                        uia = getattr(current_gui, '_uia', None)
-                        if uia is None:
-                            # 冷启动/驱动重建后缓存未初始化不等于不可用，先走正式获取入口。
-                            uia = current_gui._get_uia()
-                        if uia is None:
-                            return G.sticker_result('failed', 'UIA target proof is unavailable; no OCR fallback')
                         try:
-                            target_open = self.open_attachment_chat(uia, chat_display_name, aliases)
-                        except Exception:
-                            return G.sticker_result('failed', 'exact target is not open in the pinned window')
-                        if not target_open:
-                            return G.sticker_result('failed', 'exact target is not open in the pinned window')
+                            def refresh_aliases():
+                                nonlocal aliases
+                                _, aliases = G.resolve_sticker_target(self.db, chat_display_name, canonical)
+                                return aliases
+
+                            hwnd, uia = locate_and_activate(
+                                self, chat_display_name, aliases,
+                                gate=lambda: (self.sticker_gate(generation, job_id)
+                                              and self.account_send_allowed('表情包')
+                                              and self.send_policy_allows(canonical, chat_display_name)
+                                              and self.sticker_activity_allowed(canonical)),
+                                account_valid=self.attachment_account_valid,
+                                refresh_aliases=refresh_aliases, log=G.log)
+                        except TargetUnavailable:
+                            return G.sticker_result('failed', 'target_unavailable')
                         current = self.sticker_config_now()
                         if current is None:
                             return G.sticker_result('cancelled', 'stickers are disabled')
@@ -184,7 +171,9 @@ class StickerMixin:
             finally:
                 if snap:
                     try:
-                        self.restore_win_state(snap)
+                        # 用户切走后再还原会抢走他刚选的窗口。
+                        if desktop.foreground(hwnd):
+                            self.restore_win_state(snap)
                     except Exception:
                         pass
 

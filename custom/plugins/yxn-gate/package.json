@@ -1,0 +1,9 @@
+{
+  "name": "yxn-gate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node --test tests/run-tests.js"
+  }
+}

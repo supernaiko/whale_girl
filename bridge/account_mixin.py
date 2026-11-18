@@ -669,7 +669,16 @@ class AccountMixin:
             hwnds = list(probe._wechat_hwnds() or ())
         except Exception:
             return None
-        return len(G.uia_boot.account_window_candidates(win32gui, win32process, hwnds))
+        candidates = G.uia_boot.account_window_candidates(win32gui, win32process, hwnds)
+        account = getattr(self, 'ACCOUNT', {})
+        hwnd = int(account.get('hwnd') or 0)
+        if account.get('verified') and hwnd and not any(h == hwnd for h, _ in candidates):
+            from targeting import main_window_candidates
+            # 已核验主窗可被任意改标题，不能因为计数变成零就把发送闸永久关掉。
+            pid = int(account.get('pid') or 0)
+            if any(h == hwnd and (not pid or p == pid) for h, p in main_window_candidates(hwnd)):
+                candidates.append((hwnd, pid))
+        return len(candidates)
 
     def sticker_account_evidence_allowed(self):
         explicit_pin = bool(G.WINDOW_HWND and int(G.WINDOW_HWND) == int(self.ACCOUNT.get('hwnd') or 0))

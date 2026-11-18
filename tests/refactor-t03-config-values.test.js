@@ -261,7 +261,7 @@ test('offline partial Moments fields leave other settings and publishing flags i
   await saveLocalConfiguration(f.root, { path: '/api/moments/publish-settings', body: { interval: 12 } }, {});
   assert.deepEqual(f.raw().moments, { autoLike: false, autoLikeMaxPerDay: 7, autoReadEveryHours: 6,
     publishFeatureEnabled: true, publishEnabled: true, publishWithImage: true,
-    publishAccount: 'test-account', publishIntervalHours: 12, publishMaxPerDay: 3 });
+    publishAccount: 'test-account', publishIntervalHours: 12, intervalHours: 12, publishMaxPerDay: 3 });
 });
 
 test('Moments command preparation preserves strict publishing confirmation and selects only own fields', () => {

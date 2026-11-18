@@ -274,18 +274,17 @@ namespace WhaleLauncher
         public bool NodeRunning => _node != null && !_node.HasExited;
         public bool BridgeRunning => _bridge != null && !_bridge.HasExited;
 
-        public int Port
+        public int Port => ReadPort(DataDir);
+
+        internal static int ReadPort(string dataDir)
         {
-            get
+            try
             {
-                try
-                {
-                    var f = Path.Combine(DataDir, "server-port.txt");
-                    if (File.Exists(f) && int.TryParse(File.ReadAllText(f).Trim(), out var p) && p > 0 && p < 65536) return p;
-                }
-                catch { }
-                return 8787;
+                var f = Path.Combine(dataDir, "server-port.txt");
+                if (File.Exists(f) && int.TryParse(File.ReadAllText(f).Trim(), out var p) && p > 0 && p < 65536) return p;
             }
+            catch { }
+            return 8787;
         }
 
         public string Url => $"http://127.0.0.1:{Port}";

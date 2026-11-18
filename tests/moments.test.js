@@ -13,6 +13,17 @@ const { Store } = require('../src/memory/store');
 const { DEFAULT_CONFIG } = require('../src/infra/config');
 const register = require('../src/http/routes/moments');
 
+test('自动发表资格：作息、当天上限、最小间隔和当天静音', () => {
+  const { eligibleNow } = require('../src/services/momentsScheduler');
+  const cfg = { timezone: 'Asia/Shanghai' };
+  const now = Date.parse('2026-11-19T10:00:00+08:00');
+  assert.equal(eligibleNow(Date.parse('2026-11-19T02:00:00+08:00'), {}, cfg), false);
+  assert.equal(eligibleNow(now, { day: '2026-11-19', count: 2 }, cfg), false);
+  assert.equal(eligibleNow(now, { lastPublishAt: now - 2 * 3600000 }, cfg), false);
+  assert.equal(eligibleNow(now, {}, { ...cfg, muteDate: '2026-11-19' }), false);
+  assert.equal(eligibleNow(now, { day: '2026-11-19', count: 0 }, cfg), true);
+});
+
 test('朋友圈：读取结果保存为最近一次快照，重启后能回答主人', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'moments-snapshot-'));
   try {
@@ -289,6 +300,27 @@ test('朋友圈 HTTP 全链路：请求、鉴权领取、回传与读取', async
     const settings = await (await fetch(app.url + '/api/moments/settings')).json();
     assert.equal(settings.ok, true);
     assert.equal(settings.autoLike, true);
+    const publishSettings = await (await fetch(app.url + '/api/moments/publish-settings')).json();
+    assert.equal(publishSettings.maxPerDay, 2);
+    assert.equal(publishSettings.interval, 6);
+    assert.equal(publishSettings.intervalHours, 6);
+    assert.equal(publishSettings.todayCount, 0);
+    assert.equal(publishSettings.muteDate, '');
+    assert.equal(publishSettings.nextEligibleAt, null);
+    const muted = await (await post('/api/moments/publish-settings', {
+      muteDate: '2026-11-19', activeStart: '09:00', activeEnd: '22:30',
+      minGapHours: 4, attemptProbability: 0.5, intervalHours: 8, maxPerDay: 3,
+    })).json();
+    assert.equal(muted.muteDate, '2026-11-19');
+    assert.equal(muted.activeStart, '09:00');
+    assert.equal(muted.activeEnd, '22:30');
+    assert.equal(muted.minGapHours, 4);
+    assert.equal(muted.attemptProbability, 0.5);
+    assert.equal(muted.interval, 8);
+    assert.equal(muted.intervalHours, 8);
+    assert.equal(muted.maxPerDay, 3);
+    assert.equal(muted.enabled, false);
+    assert.equal((await post('/api/moments/publish-settings', { attemptProbability: 1.5 })).status, 400);
     const patched = await (await fetch(app.url + '/api/moments/settings', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ autoLike: false, autoReadEveryHours: 6 }),
@@ -371,13 +403,13 @@ test('朋友圈发表允许小数间隔、大于旧限制的设置和不限每�
   assert.equal(publisher.dailyCount(), 101);
 });
 
-test('定时发表从首次在线开始计时，重启后到六小时才生成、领取和回执', async t => {
+test('定时发表从首次在线开始每小时抽样，重启后仍能生成、领取和回执', async t => {
   const { MomentsPublisher } = require('../src/services/momentsPublisher');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-moments-clock-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const hour = 3600000;
-  let now = new Date(2026, 10, 10, 8).getTime();
-  const config = { paths: { dataDir: root }, moments: {
+  let now = Date.parse('2026-11-10T08:00:00+08:00');
+  const config = { root, paths: { dataDir: root }, env: { timezone: 'Asia/Shanghai' }, moments: {
     publishFeatureEnabled: true, publishEnabled: true, publishAccount: 'selected',
     publishIntervalHours: 6, publishMaxPerDay: 1,
   } };
@@ -391,15 +423,16 @@ test('定时发表从首次在线开始计时，重启后到六小时才生成�
     prompts.push(request.turns[0].content);
     return JSON.stringify({ text: '一点一点练，普通的日子也有自己的节奏。', emotion: 'happy' });
   } };
-  const create = () => new MomentsPublisher({ config, store, llm, now: () => now });
+  const create = () => new MomentsPublisher({ config, store, llm, now: () => now, random: () => 0 });
   let publisher = create();
   assert.equal(publisher.claim('other'), null);
   assert.equal(publisher.status().nextCheckAt, null);
   assert.equal(publisher.claim('selected'), null);
-  assert.equal(publisher.status().nextCheckAt, now + 6 * hour);
+  assert.equal(publisher.status().nextCheckAt, now + hour);
+  assert.equal(publisher.status().nextEligibleAt, now + hour);
   assert.equal(prompts.length, 0);
 
-  now += 6 * hour - 1;
+  now += hour - 1;
   publisher = create();
   assert.equal(publisher.claim('selected'), null);
   assert.equal(prompts.length, 0);
@@ -419,7 +452,7 @@ test('定时发表从首次在线开始计时，重启后到六小时才生成�
   assert.equal(publisher.complete({ id: job.id, account: 'selected', publishStatus: 'failed' }), true);
   assert.equal(publisher.dailyCount(), 0);
   assert.equal(publisher.state.lastSource, undefined, '明确未发表可以在下轮重新使用素材');
-  now += 6 * hour;
+  now += 3 * hour;
   assert.equal(publisher.claim('selected'), null);
   await new Promise(resolve => setImmediate(resolve));
   const retry = publisher.claim('selected');
@@ -651,4 +684,209 @@ test('素材不足时清除上次文案和配图状态，本次没有进入发�
   assert.equal(publisher.status().imageReason, '');
   assert.equal(publisher.status().image, false);
   assert.equal(publisher.claim('account'), null);
+});
+
+function automaticFixture(t, options = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-moments-auto-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  let now = Date.parse('2026-11-19T10:00:00+08:00');
+  const messages = options.messages ?? [{ role: 'user', ts: now - 1000, text: '刚刚走到公园看到树叶黄了' }];
+  const store = { sessions: new Map([['wechat:g:fixture', { messages }]]), messages: () => messages };
+  const logs = [];
+  let calls = 0;
+  const config = { root, paths: { dataDir: root }, env: { timezone: 'Asia/Shanghai' }, moments: {
+    publishFeatureEnabled: true, publishEnabled: true, publishAccount: 'fixture', ...options.moments,
+  } };
+  const create = () => new MomentsPublisher({ config, store,
+    now: () => now, random: options.random || (() => 0), logger: { info: line => logs.push(line) },
+    llm: { complete: async () => { calls++; return options.raw ?? '{"text":"我去这个面包好好吃啊","emotion":"happy"}'; } },
+  });
+  const publisher = create();
+  publisher.save({ scheduleAccount: 'fixture', lastCheck: now - 3600000 });
+  return { root, store, logs, publisher, config, create, get now() { return now; },
+    set now(value) { now = value; }, get calls() { return calls; } };
+}
+
+test('自动发表：08:00 包含、23:30 排除，跨日额度和时区一致', () => {
+  const { eligibility, eligibleNow } = require('../src/services/momentsScheduler');
+  const cfg = { timezone: 'Asia/Shanghai' };
+  const at = text => Date.parse('2026-11-19T' + text + '+08:00');
+  assert.equal(eligibleNow(at('07:59:59'), {}, cfg), false);
+  assert.equal(eligibleNow(at('08:00:00'), {}, cfg), true);
+  assert.equal(eligibleNow(at('23:29:59'), {}, cfg), true);
+  assert.equal(eligibleNow(at('23:30:00'), {}, cfg), false);
+  assert.equal(eligibility(at('02:00:00'), {}, cfg).nextEligibleAt, at('08:00:00'));
+  assert.equal(eligibility(at('23:30:00'), {}, cfg).nextEligibleAt, Date.parse('2026-11-20T08:00:00+08:00'));
+  assert.equal(eligibility(at('10:00:00'), { day: '2026-11-19', count: 2 }, cfg).nextEligibleAt,
+    Date.parse('2026-11-20T08:00:00+08:00'));
+  assert.equal(eligibility(at('10:00:00'), {}, { ...cfg, muteDate: '2026-11-19' }).nextEligibleAt,
+    Date.parse('2026-11-20T08:00:00+08:00'));
+  assert.equal(eligibility(at('10:00:00'), { lastPublishAt: at('08:00:00') }, cfg).nextEligibleAt, at('11:00:00'));
+  assert.equal(eligibleNow(at('10:00:00'), { day: '2026-11-18', count: 2 }, cfg), true);
+  assert.equal(eligibleNow(at('20:00:00'), {}, { timezone: 'America/New_York' }), false);
+  assert.equal(eligibleNow(at('10:00:00'), { lastPublishAt: at('07:00:00') }, cfg), true);
+});
+
+test('自动发表：配置可覆盖默认值，旧 intervalHours 缺失或非法时回退', () => {
+  const { scheduleSettings, eligibleNow } = require('../src/services/momentsScheduler');
+  assert.equal(scheduleSettings().intervalHours, 6);
+  for (const value of [null, '', -1, 'bad', Infinity]) assert.equal(scheduleSettings({ intervalHours: value }).intervalHours, 6);
+  assert.equal(scheduleSettings({ intervalHours: 0.5 }).intervalHours, 0.5);
+  const now = Date.parse('2026-11-19T10:00:00+08:00');
+  const state = { day: '2026-11-19', count: 2, lastPublishAt: now - 2 * 3600000 };
+  assert.equal(eligibleNow(now, state, { timezone: 'Asia/Shanghai', activeStart: '09:00', activeEnd: '11:00',
+    maxPerDay: 3, minGapHours: 1 }), true);
+  assert.equal(eligibleNow(now, {}, { timezone: 'Asia/Shanghai', activeStart: '11:00' }), false);
+});
+
+test('自动发表：概率未命中后小时内不重抽，重启与连续三天空白不补发', async t => {
+  let rolls = 0;
+  const f = automaticFixture(t, { random: () => { rolls++; return 0.25; } });
+  f.publisher.claim('fixture');
+  assert.equal(rolls, 1);
+  assert.equal(f.calls, 0);
+  f.publisher.claim('fixture');
+  f.create().claim('fixture');
+  assert.equal(rolls, 1);
+  f.now += 3 * 24 * 3600000;
+  f.publisher.claim('fixture');
+  assert.equal(rolls, 2, '离线多日也只抽本轮，不补历史轮次');
+  assert.equal(f.calls, 0);
+  assert.equal(f.publisher.job, null);
+  assert.ok(f.logs.includes('[moments] tick eligible=false reason=jitter_miss'));
+  assert.ok(f.logs.includes('[moments] tick eligible=false reason=hourly_wait'));
+});
+
+test('自动发表：夜间、静音、日上限和冷却都不抽样或调用模型', t => {
+  let rolls = 0;
+  const f = automaticFixture(t, { random: () => { rolls++; return 0; } });
+  f.config.moments.muteDate = '2026-11-19';
+  f.publisher.claim('fixture');
+  f.config.moments.muteDate = '';
+  f.publisher.save({ day: '2026-11-19', count: 2 });
+  f.publisher.claim('fixture');
+  f.publisher.save({ count: 0, lastPublishAt: f.now - 2 * 3600000 });
+  f.publisher.claim('fixture');
+  f.now = Date.parse('2026-11-19T02:00:00+08:00');
+  f.publisher.claim('fixture');
+  assert.equal(rolls, 0);
+  assert.equal(f.calls, 0);
+  for (const reason of ['muted', 'daily_limit', 'min_gap', 'inactive_hours'])
+    assert.ok(f.logs.includes('[moments] tick eligible=false reason=' + reason));
+});
+
+test('自动发表：只有昨日聊天时没有素材，不调用模型且不重复尝试', async t => {
+  const f = automaticFixture(t, { messages: [{ role: 'user', ts: Date.parse('2026-11-18T23:00:00+08:00'), text: '昨晚看到了很漂亮的月亮' }] });
+  f.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.publisher.status().status, 'no_material');
+  assert.equal(f.calls, 0);
+  assert.equal(f.publisher.dailyCount(), 0);
+  assert.equal(f.publisher.job, null);
+  f.publisher.claim('fixture');
+  assert.equal(f.calls, 0);
+});
+
+test('自动发表：模型空输出直接跳过，不重试、不入队、不占额度', async t => {
+  for (const raw of ['', '  ', 'null', '{"text":""}', '{"text":"  ","emotion":"happy"}', '{"text":null}']) {
+    const f = automaticFixture(t, { raw });
+    f.publisher.claim('fixture');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.publisher.status().status, 'skip_no_text', JSON.stringify(raw));
+    assert.equal(f.calls, 1);
+    assert.equal(f.publisher.job, null);
+    assert.equal(f.publisher.dailyCount(), 0);
+    assert.equal(f.publisher.state.lastSource, undefined);
+    f.publisher.claim('fixture');
+    assert.equal(f.calls, 1);
+  }
+});
+
+test('自动发表：当日日记摘要或事件卡可以独立供稿', async t => {
+  for (const kind of ['diary', 'event']) {
+    const f = automaticFixture(t, { messages: [] });
+    if (kind === 'diary') {
+      fs.mkdirSync(path.join(f.root, 'diary'));
+      fs.writeFileSync(path.join(f.root, 'diary', 'index.json'), JSON.stringify({ entries: {
+        '2026-11-19': { createdAt: f.now - 1000, summary: '下午试着学了一段新的舞蹈' },
+      } }));
+    } else {
+      f.store.chatStore = { chats: new Map([['wechat:g:fixture', { people: new Map([['peer', {
+        name: '伙伴', events: [{ date: '2026-11-19', createdAt: f.now - 1000, summary: '一起看了傍晚的彩霞' }],
+      }]]) }]]) };
+    }
+    f.publisher.claim('fixture');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.calls, 1, kind);
+    assert.equal(f.publisher.job?.status, 'queued', kind);
+    assert.equal(f.publisher.dailyCount(), 0);
+  }
+});
+
+test('自动发表：领取时记录三小时冷却，未确认回执和重启后仍生效', async t => {
+  const f = automaticFixture(t);
+  f.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  const job = f.publisher.claim('fixture');
+  assert.equal(job.action, 'publish');
+  assert.equal(f.publisher.state.lastPublishAt, f.now);
+  assert.equal(f.publisher.status().todayCount, 1);
+  assert.equal(f.publisher.status().nextEligibleAt, f.now + 3 * 3600000);
+  f.publisher.complete({ id: job.id, account: 'fixture', publishStatus: 'unconfirmed' });
+  f.now += 2 * 3600000;
+  f.create().claim('fixture');
+  assert.equal(f.calls, 1);
+  assert.equal(f.publisher.dailyCount(), 1);
+});
+
+test('自动发表：生成后跨入 23:30 不再领取', async t => {
+  const f = automaticFixture(t);
+  f.now = Date.parse('2026-11-19T23:29:59+08:00');
+  f.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.publisher.job?.status, 'queued');
+  f.now += 1000;
+  assert.equal(f.publisher.claim('fixture'), null);
+  assert.equal(f.publisher.job, null);
+  assert.equal(f.publisher.dailyCount(), 0);
+});
+
+test('自动发表：概率覆盖为 0 时永不调用模型，为 1 时仍需有素材', async t => {
+  const disabled = automaticFixture(t, { moments: { attemptProbability: 0 } });
+  disabled.publisher.claim('fixture');
+  assert.equal(disabled.calls, 0);
+  const enabled = automaticFixture(t, { moments: { attemptProbability: 1 }, random: () => 0.999 });
+  enabled.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(enabled.calls, 1);
+  assert.equal(enabled.publisher.job?.status, 'queued');
+  const empty = automaticFixture(t, { messages: [], moments: { attemptProbability: 1 } });
+  empty.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(empty.calls, 0);
+  assert.equal(empty.publisher.status().status, 'no_material');
+});
+
+test('自动发表：默认两条后当天不再尝试，跨日恢复且不补发', async t => {
+  const options = {};
+  const f = automaticFixture(t, options);
+  for (let i = 0; i < 2; i++) {
+    f.publisher.claim('fixture');
+    await new Promise(resolve => setImmediate(resolve));
+    const job = f.publisher.claim('fixture');
+    assert.equal(job.action, 'publish');
+    f.publisher.complete({ id: job.id, account: 'fixture', publishStatus: 'confirmed' });
+    f.now += 3 * 3600000;
+    f.store.messages().push({ role: 'user', ts: f.now - 1000, text: '刚刚去旁边的小店逛了一圈' });
+    options.raw = '{"text":"吃完饭现在只想躺一会儿","emotion":"happy"}';
+  }
+  assert.equal(f.publisher.dailyCount(), 2);
+  f.publisher.claim('fixture');
+  assert.equal(f.calls, 2);
+  f.now = Date.parse('2026-11-20T10:00:00+08:00');
+  f.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.publisher.dailyCount(), 0);
+  assert.equal(f.publisher.status().status, 'no_material');
+  assert.equal(f.calls, 2);
 });

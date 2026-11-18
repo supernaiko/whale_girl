@@ -1,0 +1,184 @@
+<UserControl x:Class="WhaleLauncher.Views.CostPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="RangeOption" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{DynamicResource Text2}" />
+            <Setter Property="Padding" Value="16,6" />
+            <Setter Property="MinWidth" Value="64" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Tile" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Tile" Property="Background" Value="{DynamicResource Hover}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Tile" Property="Background" Value="{DynamicResource AccentSoft}" />
+                                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Tile" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MetricValue" TargetType="TextBlock" BasedOn="{StaticResource Value}">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="Margin" Value="0,3,0,0" />
+        </Style>
+        <Style x:Key="DailyValue" TargetType="TextBlock" BasedOn="{StaticResource Value}">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="18,14,18,14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,14">
+            <Button x:Name="RefreshButton" DockPanel.Dock="Right" Content="刷新" Padding="16,6"
+                    Style="{StaticResource Ghost}" VerticalAlignment="Center" Click="OnRefresh" />
+            <TextBlock DockPanel.Dock="Left" Text="花销" Style="{StaticResource H1}" Margin="0,0,20,0" />
+            <Border HorizontalAlignment="Left" VerticalAlignment="Center" CornerRadius="9" Padding="3"
+                    Background="{DynamicResource GhostBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                <StackPanel x:Name="RangeButtons" Orientation="Horizontal">
+                    <RadioButton Content="今日" Tag="1" IsChecked="True"
+                                 Click="OnRangeChanged" Style="{StaticResource RangeOption}" />
+                    <RadioButton Content="7 天" Tag="7" Click="OnRangeChanged" Style="{StaticResource RangeOption}" />
+                    <RadioButton Content="30 天" Tag="30" Click="OnRangeChanged" Style="{StaticResource RangeOption}" />
+                    <RadioButton Content="一年" Tag="365" Click="OnRangeChanged" Style="{StaticResource RangeOption}" />
+                </StackPanel>
+            </Border>
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Border Style="{StaticResource Card}" Padding="18,15" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="鲸鲸 · DeepSeek" Style="{StaticResource H2}" FontSize="17" />
+                        <UniformGrid Columns="3" Margin="0,12,0,12">
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="金额" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="WhalePeakCost" Style="{StaticResource MetricValue}" FontSize="16" Foreground="{DynamicResource Accent}" />
+                                <TextBlock x:Name="WhaleOffPeakCost" Style="{StaticResource MetricValue}" FontSize="16" Foreground="{DynamicResource Accent}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="请求数" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="WhaleRequests" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="命中率" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="WhaleHitRate" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="输入 token" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="WhalePrompt" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="其中缓存命中" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="WhaleCached" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="输出 token" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="WhaleCompletion" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                        </UniformGrid>
+                        <TextBlock x:Name="WhaleFlashRates" Style="{StaticResource Small}" Margin="0,0,0,6" TextWrapping="Wrap" />
+                        <TextBlock x:Name="WhaleProRates" Style="{StaticResource Small}" Margin="0,0,0,6" TextWrapping="Wrap" Visibility="Collapsed" />
+                        <Border Height="1" Background="{DynamicResource Line}" Margin="0,0,0,10" />
+                        <TextBlock Text="按日明细" Style="{StaticResource H2}" />
+                        <Grid Margin="0,8,10,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="150" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="日期" Style="{StaticResource Label}" />
+                            <TextBlock Grid.Column="1" Text="请求" TextAlignment="Right" Style="{StaticResource Label}" />
+                            <TextBlock Grid.Column="2" Text="金额" TextAlignment="Right" Style="{StaticResource Label}" />
+                        </Grid>
+                        <ScrollViewer MaxHeight="144" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="DailyUsage">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{DynamicResource LineSoft}" BorderThickness="0,1,0,0" Padding="0,6,0,6">
+                                            <Grid Margin="0,0,10,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="100" />
+                                                    <ColumnDefinition Width="150" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Date}" Style="{StaticResource DailyValue}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Requests}" TextAlignment="Right" Style="{StaticResource DailyValue}" />
+                                                <TextBlock Grid.Column="2" Text="{Binding Cost}" TextAlignment="Right" Style="{StaticResource DailyValue}" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock x:Name="WhaleStatus" Style="{StaticResource Small}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}" Padding="18,15">
+                    <StackPanel>
+                        <DockPanel LastChildFill="False">
+                            <TextBlock DockPanel.Dock="Left" Text="Codex" Style="{StaticResource H2}" FontSize="17" VerticalAlignment="Center" />
+                            <Border DockPanel.Dock="Right" CornerRadius="9" Padding="3"
+                                    Background="{DynamicResource GhostBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal">
+                                    <RadioButton Content="按高峰" IsChecked="True"
+                                                 Click="OnCodexBandChanged" Style="{StaticResource RangeOption}" />
+                                    <RadioButton x:Name="CodexOffPeakOption" Content="按空闲"
+                                                 Click="OnCodexBandChanged" Style="{StaticResource RangeOption}" />
+                                </StackPanel>
+                            </Border>
+                        </DockPanel>
+                        <TextBlock Text="Codex 会话按 DeepSeek Flash 价格折算，缓存命中率沿用 Codex 实测值。"
+                                   Style="{StaticResource Small}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <UniformGrid Columns="3" Margin="0,12,0,0">
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="折算金额" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="CodexCost" Style="{StaticResource MetricValue}" Foreground="{DynamicResource Accent}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="会话数" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="CodexSessions" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel Margin="0,0,0,10">
+                                <TextBlock Text="其中推理输出" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="CodexReasoning" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="输入 token" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="CodexPrompt" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="其中缓存命中" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="CodexCached" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                            <StackPanel>
+                                <TextBlock Text="输出 token" Style="{StaticResource Label}" />
+                                <TextBlock x:Name="CodexCompletion" Style="{StaticResource MetricValue}" />
+                            </StackPanel>
+                        </UniformGrid>
+                        <TextBlock x:Name="CodexStatus" Style="{StaticResource Small}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <TextBlock x:Name="PricingNote"
+                           Style="{StaticResource Small}" TextWrapping="Wrap" Margin="0,12,0,0" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

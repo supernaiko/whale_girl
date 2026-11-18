@@ -2,44 +2,14 @@
 import engine as G
 from account_mixin import is_raw_chat_id
 from runtime_kernel_api import KernelApi, KernelApiError
-from sticker_transport import FileTargetError, file_alias_match, resolve_file_target
-from window_activation import activate
+from sticker_transport import FileTargetError, resolve_file_target
+from targeting import TargetUnavailable, locate_and_activate
 
 RETRY_DELAY = 0.3
-MAX_CHAT_ATTEMPTS = 3
 MAX_FILE_RETRIES = 2
 
 
 class FileSendMixin:
-    def _open_file_chat(self, uia, shown, aliases, ready, warn):
-        if not ready():
-            warn('open_chat_fail', 'window_or_permission_changed')
-            return False
-        if file_alias_match(uia.current_chat(), aliases):
-            return True
-        candidates = [name for name in dict.fromkeys([shown, *sorted(aliases)])
-                      if name and not is_raw_chat_id(name)]
-        if not candidates:
-            warn('open_chat_fail', 'no_searchable_alias')
-        for attempt, alias in enumerate(candidates[:MAX_CHAT_ATTEMPTS], 1):
-            if not ready():
-                warn('open_chat_fail', 'window_or_permission_changed', attempt)
-                return False
-            try:
-                # 兼容层收到列表时只用第一个名字搜；逐个传才会搜到其它别名。
-                opened = uia.open_chat(alias, retries=1)
-            except Exception as exc:
-                warn('open_chat_fail', 'uia_navigation_raised', attempt, exc=exc)
-                G.time.sleep(RETRY_DELAY)
-                continue
-            G.time.sleep(RETRY_DELAY)
-            current = uia.current_chat()
-            if file_alias_match(current, aliases):
-                return True
-            warn('open_chat_fail', 'different_chat_title' if opened else 'open_chat_returned_false',
-                 attempt, current=current or '')
-        return False
-
     def send_file(self, item, allowed):
         canonical, shown, aliases, hwnd, uia = '', item['chat'], (), 0, None
 
@@ -65,8 +35,7 @@ class FileSendMixin:
             return 'target_unavailable'
 
         def gate():
-            return (allowed() and self.account_send_allowed('文件附件')
-                    and self.send_policy_allows(canonical, shown))
+            return allowed() and self.send_policy_allows(canonical, shown)
 
         with self.send_lock, G._SendStateScope(budget=75):
             if not gate() or not self.sticker_activity_allowed(canonical):
@@ -79,70 +48,23 @@ class FileSendMixin:
                 with self.gui_lock:
                     if not gate():
                         return 'blocked'
-                    for attempt in (1, 2):
-                        try:
-                            hwnd = int(self.ACCOUNT.get('hwnd') or 0)
-                            if hwnd and self.attachment_account_valid(hwnd):
-                                break
-                            warn('hwnd_invalid', 'account_window_verification_failed' if hwnd else 'missing_hwnd',
-                                 attempt)
-                        except Exception as exc:
-                            warn('hwnd_invalid', 'account_window_check_raised', attempt, exc=exc)
-                        if attempt == 1:
-                            G.time.sleep(RETRY_DELAY)
-                            if not gate():
-                                return 'blocked'
-                    else:
-                        return 'target_unavailable'
-
-                    if not desktop.foreground(hwnd):
+                    if not desktop.foreground(int(self.ACCOUNT.get('hwnd') or 0)):
                         snap = self.snapshot_win_state()
-                        for attempt in (1, 2):
-                            if not gate():
-                                return 'blocked'
-                            if not self.attachment_account_valid(hwnd):
-                                warn('hwnd_invalid', 'account_window_changed_during_activation', attempt)
-                                return 'target_unavailable'
-                            try:
-                                if attempt == 1:
-                                    activated = self.force_foreground(hwnd)
-                                else:
-                                    activated = activate(hwnd, retry=True)
-                                # 还原窗口用的是异步调用，以稳定后的真实前台句柄为准。
-                                G.time.sleep(RETRY_DELAY)
-                                if desktop.foreground(hwnd):
-                                    break
-                                warn('foreground_fail', 'foreground_lost_after_activation' if activated
-                                     else 'activation_did_not_reach_foreground', attempt)
-                            except Exception as exc:
-                                warn('foreground_fail', 'foreground_activation_raised', attempt, exc=exc)
-                        else:
-                            return 'target_unavailable'
+                    try:
+                        def refresh_aliases():
+                            nonlocal aliases
+                            _, aliases = resolve_file_target(self.db, canonical)
+                            return aliases
 
+                        hwnd, uia = locate_and_activate(
+                            self, shown, aliases,
+                            gate=lambda: (gate() and self.account_send_allowed('文件附件')
+                                          and self.sticker_activity_allowed(canonical)),
+                            account_valid=self.attachment_account_valid,
+                            refresh_aliases=refresh_aliases, log=G.log_warn)
+                    except TargetUnavailable:
+                        return 'target_unavailable'
                     gui = self.gui
-                    try:
-                        if gui is None or not gui.use_window(hwnd) or int(gui.main_hwnd) != hwnd:
-                            warn('use_window_fail', 'gui_unavailable' if gui is None else 'gui_binding_failed')
-                            return 'target_unavailable'
-                        uia = gui._get_uia()
-                    except Exception as exc:
-                        warn('use_window_fail', 'gui_binding_raised', exc=exc)
-                        return 'target_unavailable'
-                    if uia is None:
-                        warn('open_chat_fail', 'uia_unavailable')
-                        return 'target_unavailable'
-
-                    def ready():
-                        return (gate() and self.sticker_activity_allowed(canonical)
-                                and self.attachment_account_valid(hwnd)
-                                and int(gui.main_hwnd) == hwnd and desktop.foreground(hwnd))
-
-                    try:
-                        if not self._open_file_chat(uia, shown, aliases, ready, warn):
-                            return 'target_unavailable'
-                    except Exception as exc:
-                        warn('open_chat_fail', 'current_chat_read_raised', exc=exc)
-                        return 'target_unavailable'
 
                     for attempt in range(1, MAX_FILE_RETRIES + 2):
                         outcome = G.guarded_sticker_send(

@@ -119,11 +119,10 @@ function momentsIntent(text) {
  *
  * 不用正则：模型有时把标记写在开头还没闭合，`[[sticker[\s\S]*$` 这类贪心写法
  * 会把整条回复吃光（用户那边就是「她突然不说话」）。这里逐个字符扫描：
- *   1. 小写副本里找 '[['，位置与原串一一对应（ASCII 大小写同长度）；
+ *   1. 找到 '[[' 后，只对标记名忽略大小写，避免 Unicode 小写转换改变正文偏移；
  *   2. 跳过空白后必须是 'sticker'（兼容 "[[ sticker : 炸毛"），再跳到分隔符；
  *   3. 有 ':' / '：' 才算给了分类，分类名去空白后 1~40 字且不含换行；
- *   4. 有 ']]' 删到 ']]'；没闭合就删到这一行末尾（不吞后面的段落）；
- *      没有分隔符只删标记本身。
+ *   4. 闭合符只属于本行当前标记；半截标记有分隔符时清理参数，否则只删标记前缀。
  * 最多处理 3 个，全部删掉但只取第一个分类名。
  */
 function stripStickerMarks(input) {
@@ -132,30 +131,28 @@ function stripStickerMarks(input) {
   let count = 0;
   let from = 0;
   while (count < 3) {
-    const lower = text.toLowerCase();
-    const open = lower.indexOf('[[', from);
+    const open = text.indexOf('[[', from);
     if (open < 0) break;
     let i = open + 2;
-    while (i < lower.length && (lower[i] === ' ' || lower[i] === '\t')) i++;
-    if (lower.slice(i, i + 7) !== 'sticker') { from = open + 2; continue; }
+    while (text[i] === ' ' || text[i] === '\t') i++;
+    if (text.slice(i, i + 7).toLowerCase() !== 'sticker') { from = open + 2; continue; }
     let j = i + 7;
-    while (j < lower.length && (lower[j] === ' ' || lower[j] === '\t')) j++;
-    const hasDelimiter = lower[j] === ':' || lower[j] === '：';
+    while (text[j] === ' ' || text[j] === '\t') j++;
+    const hasDelimiter = text[j] === ':' || text[j] === '：';
     const start = hasDelimiter ? j + 1 : j;
     const close = text.indexOf(']]', start);
+    let end = j;
+    while (end < text.length && text[end] !== '\r' && text[end] !== '\n' && !text.startsWith('[[', end)) end++;
     let stop;
-    if (close >= 0) {
+    if (close >= 0 && close < end) {
       stop = close + 2;
       if (hasDelimiter && !category) category = text.slice(start, close);
     } else if (hasDelimiter) {
-      // 没闭合：删到行尾，后面的段落不动；分类名最多取到行尾
-      const lineEnd = text.indexOf('\n', start);
-      stop = lineEnd < 0 ? text.length : lineEnd;
+      stop = end;
       if (!category) category = text.slice(start, stop);
     } else {
-      stop = close === start ? close + 2 : start;
+      stop = start;
     }
-    if (stop <= open) stop = Math.min(text.length, open + 9);
     text = text.slice(0, open) + text.slice(stop);
     count++;
     from = open;
@@ -526,7 +523,8 @@ class Bot {
     // 改成 \s+ 就够了（H8）。
     const rawText = String(msg.text || '').replace(/^[A-Za-z0-9_\-]{4,}:\s+/, '');
     const spell = String(this.config.admin?.spell || '').trim();
-    const isAdminSpell = Boolean(spell && rawText.trim() === spell);
+    const isAdminSpell = Boolean(spell && rawText.trim() === spell && msg.platform === 'wechat'
+      && msg.chatType === 'private' && isVerifiedOwner(this.config, msg));
     if (isAdminSpell) msg.text = '（已隐藏：管理员魔咒）';
     const selfNames = addressing.herNames(this, msg);
     const clean = persona.cleanIncomingForPersona(isAdminSpell ? msg.text : rawText, this.config, selfNames);

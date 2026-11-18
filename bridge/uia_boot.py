@@ -67,9 +67,13 @@ def is_wechat_account_window(win32gui, hwnd: int) -> bool:
     """登录账号的主窗候选。微信 4.x 的隐藏辅助窗也可能用相同标题和 Qt 类名。"""
     try:
         cls = (win32gui.GetClassName(hwnd) or "").casefold()
-        if "login" in cls or not ("qwindowicon" in cls or cls == "mmui::mainwindow"):
+        native = cls in ("mmui::mainwindow", "wechatmainwndforpc")
+        if "login" in cls or not ("qwindowicon" in cls or native):
             return False
-        if not is_wechat_main_title(win32gui.GetWindowText(hwnd)):
+        title = win32gui.GetWindowText(hwnd) or ''
+        if not native and not (is_wechat_main_title(title)
+                               or '微信' in title and not any(
+                                   name in title for name in ('设置', '登录', '聊天记录'))):
             return False
         # 最小化时窗口矩形可能退化，使用还原后的主窗尺寸。
         width, height = _account_window_size(win32gui, hwnd, win32gui.IsIconic(hwnd))

@@ -84,12 +84,13 @@ test('追加表情按整轮剩余字数决定，完整保留能放下的表情',
       for (const maxBubbles of [1, 2]) {
         config.chat.maxBubbles = maxBubbles;
         for (const discussion of [false, true]) {
-          for (const source of ['kaomoji', 'random-emoji', 'model-emoji']) {
+          for (const source of ['kaomoji', 'tone-emoji', 'model-emoji']) {
             for (const size of ['short', 'boundary', 'full']) {
-              let draws = 0;
-              bot.rng = () => source === 'random-emoji' && draws++ === 1 ? 0.75 : 0;
+              bot.rng = () => 0;
               const decision = { action: 'reply', key: 'web:' + chatType, msg: { chatType, discussion, text: '原消息' } };
-              const body = size === 'short' ? '好呀' : '答'.repeat(size === 'full' ? limit : limit - 1);
+              const prefix = source === 'tone-emoji' ? '开心' : '好呀';
+              const length = size === 'full' ? limit : limit - 1;
+              const body = size === 'short' ? prefix : prefix + '答'.repeat(length - prefix.length);
               const bubbles = bot.finalize(decision, body + (source === 'model-emoji' ? '🐋' : ''));
               const label = JSON.stringify({ chatType, maxBubbles, discussion, source, size });
               assert.ok(Array.from(bubbles.join('')).length <= limit, label);
@@ -97,7 +98,7 @@ test('追加表情按整轮剩余字数决定，完整保留能放下的表情',
               if (size === 'full' || (size === 'boundary' && (maxBubbles === 1 || source === 'kaomoji'))) {
                 assert.deepEqual(bubbles, [body], label);
               } else {
-                const extra = source === 'kaomoji' ? '(๑•̀ㅂ•́)و✧' : '🐋';
+                const extra = { kaomoji: '(๑•̀ㅂ•́)و✧', 'tone-emoji': '😄', 'model-emoji': '🐋' }[source];
                 assert.deepEqual(bubbles, maxBubbles === 1 ? [body + ' ' + extra] : [body, extra], label);
               }
             }
@@ -291,6 +292,8 @@ test('消息里有链接时会先读链接，并把内容写进提示词', async
   assert.equal(d.action, 'reply');
   assert.match(promptOf(d), /对方发的链接/);
   assert.match(promptOf(d), /猫猫跳舞视频/);
+  assert.match(promptOf(d), /失败时准确说明未取得内容/);
+  assert.doesNotMatch(promptOf(d), /你刚点开看了这些信息/);
   cleanup();
 });
 
@@ -300,14 +303,16 @@ test('链接读不到时也不会崩', async () => {
   const d = await bot.decide(privateMsg('看这个 https://example.com/x'));
   assert.equal(d.action, 'reply');
   assert.match(promptOf(d), /打不开|对方发的链接/);
+  assert.match(promptOf(d), /失败时准确说明未取得内容/);
   cleanup();
 });
 
 test('魔咒：主人输入才生效，其他人输入无效', async () => {
   const { bot, cleanup } = makeBot();
   const denied = await bot.decide(privateMsg('test-spell', { senderName: '路人甲', senderId: 'u999' }));
-  assert.equal(denied.action, 'ignore');
-  assert.equal(denied.reason, 'not_owner');
+  assert.equal(denied.action, 'reply', '非主人魔咒按普通对话处理');
+  assert.equal(denied.commandType, undefined);
+  assert.equal(bot.store.getState(denied.key).adminUntil || 0, 0);
 
   const ok = await bot.decide(privateMsg('test-spell', { platform: 'wechat', senderName: 'Master', senderId: 'wxid_test_master' }));
   assert.equal(ok.action, 'command');
@@ -515,9 +520,9 @@ test('群禁言魔咒只给同一个微信私聊里的主人，并在 30 分钟�
     platform: 'wechat', senderName: 'Master', senderId: 'wxid_test_master', ...extra,
   });
   assert.equal((await bot.decide(owner('禁言 测试群'))).commandType, 'admin_hint');
-  assert.equal((await bot.decide(owner('test-spell', { chatType: 'group' }))).action, 'ignore');
-  assert.equal((await bot.decide(owner('test-spell', { platform: 'web' }))).action, 'ignore');
-  assert.equal((await bot.decide(owner('test-spell', { senderId: 'guest' }))).action, 'ignore');
+  assert.notEqual((await bot.decide(owner('test-spell', { chatType: 'group' }))).commandType, 'admin_spell');
+  assert.notEqual((await bot.decide(owner('test-spell', { platform: 'web' }))).commandType, 'admin_spell');
+  assert.notEqual((await bot.decide(owner('test-spell', { senderId: 'guest' }))).commandType, 'admin_spell');
   assert.equal((await bot.decide(owner('test-spell'))).commandType, 'admin_spell');
   assert.equal((await bot.decide(owner('禁言 测试群', { chatId: 'another-chat' }))).commandType, 'admin_hint');
   assert.equal((await bot.decide(owner('禁言 测试群', { senderId: 'guest' }))).commandType, 'admin_hint');
@@ -587,8 +592,8 @@ test('普通人把昵称改成主人名也不能提权', async () => {
   const renamed = await bot.decide(stranger('叫我 Master'));
   assert.notEqual(renamed.action, 'command');
   const spell = await bot.decide(stranger('test-spell'));
-  assert.equal(spell.action, 'ignore');
-  assert.equal(spell.reason, 'not_owner');
+  assert.equal(spell.action, 'reply', '非主人魔咒按普通对话处理');
+  assert.equal(spell.commandType, undefined);
   cleanup();
 });
 

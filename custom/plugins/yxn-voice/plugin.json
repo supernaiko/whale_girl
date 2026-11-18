@@ -1,0 +1,14 @@
+{
+  "Id": "yxn-voice",
+  "Name": "说话方式",
+  "Author": "Naiko",
+  "Version": "0.1.0",
+  "MinAppVersion": "4.1.2",
+  "Description": "从她自己的历史回复里统计说话习惯（长度、开头、标点、表情），把结论浓缩成一两行注入提示词，让她听起来更像人在发微信，而不是在写作文。",
+  "ResultLabel": "说话方式",
+  "Api": 4,
+  "Kind": "message",
+  "Hooks": ["chat.prompt", "chat.before_send"],
+  "Permissions": ["system.full"],
+  "ExecutionTimeoutMs": 20000
+}

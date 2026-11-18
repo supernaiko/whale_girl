@@ -44,6 +44,8 @@ namespace WhaleLauncher
         {
             new NavEntry { Key = "状态", Label = "状态", Icon = Geometry.Parse("M4 4h7v7H4z M13 4h7v4h-7z M13 10h7v10h-7z M4 13h7v7H4z") },
             new NavEntry { Key = "人设", Label = "人设", Icon = Geometry.Parse("M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7") },
+            new NavEntry { Key = "心情", Label = "心情", Icon = Geometry.Parse("M12 21s-7-4.6-7-10a4.2 4.2 0 0 1 7-3 4.2 4.2 0 0 1 7 3c0 5.4-7 10-7 10Z") },
+            new NavEntry { Key = "说话方式", Label = "说话方式", Icon = Geometry.Parse("M4 6h16v10H9l-4 4v-4H4z M8 10h8 M8 13h5") },
             new NavEntry { Key = "表情包", Label = "表情包", Icon = Geometry.Parse("M4 4h16v16H4z M8.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M20 16l-4.6-4.6L7 20") },
             new NavEntry { Key = "朋友圈", Label = "朋友圈", Icon = Geometry.Parse("M4 8h3l2-3h6l2 3h3v12H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z") },
             new NavEntry { Key = "主动与提醒", Label = "主动与提醒", Icon = Geometry.Parse("M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8 M10.5 20a2 2 0 0 0 3 0") },
@@ -51,6 +53,9 @@ namespace WhaleLauncher
             new NavEntry { Key = "诊断", Label = "诊断", Icon = Geometry.Parse("M3 12h4l2-5 4 10 2-5h6") },
             new NavEntry { Key = "插件市场", Label = "插件市场", Icon = Geometry.Parse("M4 9h16v11H4z M3 5h18v4H3z M10 13h4") },
             new NavEntry { Key = "Codex 日志", Label = "Codex 日志", Icon = Geometry.Parse("M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7") },
+            new NavEntry { Key = "调试台", Label = "调试台", Icon = Geometry.Parse("M4 5h16v14H4z M8 9l3 3-3 3 M13 15h3") },
+            new NavEntry { Key = "花销", Label = "花销", Icon = Geometry.Parse("M4 6h16v13H4z M4 9h16 M14 14h3") },
+            new NavEntry { Key = "备份", Label = "备份与迁移", Icon = Geometry.Parse("M4 7h16v10H4z M9 7V4h6v3 M9 17v3h6v-3") },
             new NavEntry { Key = "设置", Label = "设置", Icon = Geometry.Parse("M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.12.4.5.86 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z") },
         };
 
@@ -96,6 +101,7 @@ namespace WhaleLauncher
             {
                 Appearance.Changed -= OnAppearanceChanged;
                 _timer.Stop();
+                if (_pages.TryGetValue("调试台", out var page) && page is DebugPage debug) debug.CancelActiveWork();
                 _sup.Dispose();
             };
         }
@@ -541,6 +547,8 @@ namespace WhaleLauncher
             {
                 case "状态": return new StatusPage(_sup);
                 case "人设": return new PersonaPage(_sup);
+                case "心情": return new MoodPage(_sup);
+                case "说话方式": return new VoicePage(_sup);
                 case "表情包": return new StickerPage(_sup);
                 case "语音发送": return new VoiceSendPage(_sup);
                 case "朋友圈": return new MomentsPage(_sup);
@@ -548,8 +556,11 @@ namespace WhaleLauncher
                 case "微信桥接": return new BridgePage(_sup);
                 case "诊断": return new DiagPage(_sup);
                 case "插件市场": return new PluginMarketPage(_pluginMarket, UpdateManifestService.LocalVersion(_sup.BaseDir), _sup);
+                case "备份": return new BackupPage(_sup);
                 case "设置": return new SettingsPage(_sup);
                 case "Codex 日志": return new CodexLogPage(_sup);
+                case "调试台": return new DebugPage(_sup);
+                case "花销": return new CostPage(_sup);
                 default:
                     return new PlaceholderPage(key, "这一页还没做。");
             }

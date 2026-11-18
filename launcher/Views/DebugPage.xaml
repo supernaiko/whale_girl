@@ -1,0 +1,230 @@
+<UserControl x:Class="WhaleLauncher.Views.DebugPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="FieldLabel" TargetType="TextBlock" BasedOn="{StaticResource Label}">
+            <Setter Property="Margin" Value="0,0,0,5" />
+        </Style>
+        <Style x:Key="DebugCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style x:Key="ResultBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="FontFamily" Value="Consolas, Microsoft YaHei UI" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style x:Key="ContactPicker" TargetType="ComboBox" BasedOn="{StaticResource DarkCombo}">
+            <Style.Resources>
+                <Style TargetType="ScrollViewer">
+                    <Setter Property="CanContentScroll" Value="True" />
+                </Style>
+            </Style.Resources>
+            <Setter Property="IsEditable" Value="True" />
+            <Setter Property="IsTextSearchEnabled" Value="False" />
+            <Setter Property="IsSynchronizedWithCurrentItem" Value="False" />
+            <Setter Property="TextSearch.TextPath" Value="Wxid" />
+            <Setter Property="AutomationProperties.Name" Value="目标会话" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="ItemTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock TextTrimming="CharacterEllipsis">
+                            <Run Text="{Binding Label, Mode=OneWay}" /><Run Text=" · " Foreground="{DynamicResource Muted}" />
+                            <Run Text="{Binding Wxid, Mode=OneWay}" Foreground="{DynamicResource Muted}" />
+                        </TextBlock>
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="{DynamicResource Text2}" />
+            <Setter Property="Padding" Value="16,7" />
+            <Setter Property="Margin" Value="0,0,6,4" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Tab" Padding="{TemplateBinding Padding}" CornerRadius="6"
+                                Background="{DynamicResource GhostBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Tab" Property="Background" Value="{DynamicResource GhostHover}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Foreground" Value="{DynamicResource Text}" />
+                                <Setter TargetName="Tab" Property="Background" Value="{DynamicResource AccentSoft}" />
+                                <Setter TargetName="Tab" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="24,18,24,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="2*" MinHeight="220" />
+            <RowDefinition Height="*" MinHeight="115" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Margin="0,0,0,12">
+            <Button x:Name="RefreshContacts" DockPanel.Dock="Right" Content="刷新联系人"
+                    Style="{StaticResource Ghost}" Margin="12,0,0,0" VerticalAlignment="Center" Click="OnRefreshContacts" />
+            <TextBlock DockPanel.Dock="Left" Text="调试台" Style="{StaticResource H1}" />
+            <TextBlock x:Name="ContactState" Text="联系人未同步" Style="{StaticResource Small}"
+                       Margin="12,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" />
+        </DockPanel>
+
+        <TabControl Grid.Row="1" Padding="0,8,0,0" Background="Transparent" BorderThickness="0">
+            <TabItem Header="发文件">
+                <Border Style="{StaticResource DebugCard}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="750" HorizontalAlignment="Left" Width="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+                            <TextBlock Text="目标会话" Style="{StaticResource FieldLabel}" />
+                            <ComboBox x:Name="FileChat" Style="{StaticResource ContactPicker}" />
+                            <TextBlock Text="文件路径" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="选择文件" Style="{StaticResource Ghost}" Margin="8,0,0,0" Click="OnPickFile" />
+                                <TextBox x:Name="FilePath" AutomationProperties.Name="文件路径" />
+                            </DockPanel>
+                            <Button Content="发送文件" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,12,0,12" Click="OnSendFile" />
+                            <TextBlock Text="任务状态" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="FileResult" Style="{StaticResource ResultBox}" MinHeight="62" MaxHeight="130" AutomationProperties.Name="文件任务状态" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </TabItem>
+            <TabItem Header="发表情">
+                <Border Style="{StaticResource DebugCard}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="750" HorizontalAlignment="Left" Width="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+                            <TextBlock Text="目标会话" Style="{StaticResource FieldLabel}" />
+                            <ComboBox x:Name="EmoticonChat" Style="{StaticResource ContactPicker}" />
+                            <TextBlock Text="表情代码" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                            <TextBox x:Name="EmoticonCode" Text="[微笑]" AutomationProperties.Name="表情代码" />
+                            <Button Content="发送表情" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,12,0,12" Click="OnSendEmoticon" />
+                            <TextBlock Text="发送结果" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="EmoticonResult" Style="{StaticResource ResultBox}" MinHeight="62" MaxHeight="130" AutomationProperties.Name="表情发送结果" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </TabItem>
+            <TabItem Header="链接">
+                <Border Style="{StaticResource DebugCard}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="750" HorizontalAlignment="Left" Width="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+                            <TextBlock Text="目标会话" Style="{StaticResource FieldLabel}" />
+                            <ComboBox x:Name="TextChat" Style="{StaticResource ContactPicker}" />
+                            <TextBlock Text="纯文本（可含 URL）" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                            <TextBox x:Name="SendText" AcceptsReturn="True" TextWrapping="Wrap" Height="80" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="纯文本" />
+                            <Button Content="发送文本" Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0,12,0,12" Click="OnSendText" />
+                            <TextBlock Text="发送结果" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="TextResult" Style="{StaticResource ResultBox}" MinHeight="62" MaxHeight="130" AutomationProperties.Name="文本发送结果" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </TabItem>
+            <TabItem Header="Codex">
+                <Border Style="{StaticResource DebugCard}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="850" HorizontalAlignment="Left" Width="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+                            <TextBlock Text="任务" Style="{StaticResource FieldLabel}" />
+                            <TextBox x:Name="CodexPrompt" AcceptsReturn="True" TextWrapping="Wrap" Height="110" VerticalScrollBarVisibility="Auto"
+                                     TextChanged="OnCodexPromptChanged" AutomationProperties.Name="Codex 任务" />
+                            <TextBlock Text="工作目录" Style="{StaticResource FieldLabel}" Margin="0,12,0,5" />
+                            <TextBox x:Name="CodexDirectory" AutomationProperties.Name="Codex 工作目录" />
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button x:Name="RunCodex" Content="运行" Style="{StaticResource Primary}" Click="OnRunCodex" />
+                                <Button x:Name="CancelCodex" Content="取消" Style="{StaticResource Ghost}" Margin="8,0,0,0" IsEnabled="False" Click="OnCancelCodex" />
+                                <TextBlock x:Name="CodexHint" Style="{StaticResource Small}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock x:Name="CodexState" Style="{StaticResource Small}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </TabItem>
+            <TabItem Header="微博">
+                <Border Style="{StaticResource DebugCard}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="关键词" Style="{StaticResource Label}" Margin="0,0,10,0" VerticalAlignment="Center" />
+                            <Button DockPanel.Dock="Right" Content="搜索" Style="{StaticResource Primary}" Margin="8,0,0,0" Click="OnSearchWeibo" />
+                            <TextBox x:Name="WeiboQuery" AutomationProperties.Name="微博搜索关键词" />
+                        </DockPanel>
+                        <TextBlock x:Name="WeiboState" Grid.Row="1" Style="{StaticResource Small}" TextWrapping="Wrap" Margin="0,8,0,8" />
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="1.2*" />
+                            </Grid.ColumnDefinitions>
+                            <ListBox x:Name="WeiboPosts" Background="{DynamicResource FieldBg}" Foreground="{DynamicResource Text}"
+                                     BorderBrush="{DynamicResource FieldBorder}" HorizontalContentAlignment="Stretch"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="OnWeiboPostSelected"
+                                     AutomationProperties.Name="微博搜索结果">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="5,5,5,7">
+                                            <TextBlock Text="{Binding Excerpt}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding FirstImage}" Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FirstImage}" />
+                                            <TextBlock Text="{Binding PostUrl}" Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" ToolTip="{Binding PostUrl}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            <Grid Grid.Column="1" Margin="12,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Style="{StaticResource Small}" TextTrimming="CharacterEllipsis" Margin="0,0,0,5">
+                                    <Hyperlink x:Name="OriginalPost" Foreground="{DynamicResource Accent}" RequestNavigate="OnOpenWeiboPost">
+                                        <Run x:Name="OriginalPostUrl" />
+                                    </Hyperlink>
+                                </TextBlock>
+                                <DockPanel Grid.Row="1">
+                                    <Button x:Name="DownloadWeibo" DockPanel.Dock="Right" Content="下载图片" Style="{StaticResource Ghost}" IsEnabled="False" Margin="8,0,0,0" Click="OnDownloadWeibo" />
+                                    <ComboBox x:Name="WeiboImages" SelectionChanged="OnWeiboImageSelected" AutomationProperties.Name="图片 URL"
+                                              ToolTip="{Binding SelectedItem, RelativeSource={RelativeSource Self}}" />
+                                </DockPanel>
+                                <TextBlock x:Name="WeiboImageState" Grid.Row="2" Style="{StaticResource Small}" TextWrapping="Wrap" Margin="0,6,0,6" />
+                                <Border Grid.Row="3" Background="{DynamicResource FieldBg}" BorderBrush="{DynamicResource Line}" BorderThickness="1">
+                                    <Image x:Name="WeiboPreview" Stretch="Uniform" AutomationProperties.Name="微博大图预览" />
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,12,0,0" Padding="12">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <Button DockPanel.Dock="Right" Content="清空" Style="{StaticResource Ghost}" Padding="10,3" Click="OnClearLog" />
+                    <TextBlock Text="调试日志" Style="{StaticResource H2}" VerticalAlignment="Center" />
+                </DockPanel>
+                <TextBox x:Name="Log" Style="{StaticResource ResultBox}" UndoLimit="0" AutomationProperties.Name="调试日志" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</UserControl>

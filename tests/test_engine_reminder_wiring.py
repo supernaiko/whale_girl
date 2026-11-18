@@ -87,6 +87,7 @@ class ActualRuntimeReminderTests(unittest.TestCase):
         for module_name, class_name in (
             ('account_mixin', 'AccountMixin'), ('window_mixin', 'WindowMixin'),
             ('sender_mixin', 'SenderMixin'), ('sticker_mixin', 'StickerMixin'),
+            ('file_mixin', 'FileSendMixin'),
             ('voice_mixin', 'VoiceMixin'), ('receiver_mixin', 'ReceiverMixin'),
         ):
             module = ModuleType(module_name)
@@ -213,13 +214,15 @@ class ActualRuntimeReminderTests(unittest.TestCase):
 
     def test_shutdown_uses_the_actual_retained_runner(self):
         runner = self.assemble()
+        file_send_stop = Mock()
         self.runtime.pipeline = SimpleNamespace(close=Mock())
         self.runtime.listener = SimpleNamespace(stop=Mock())
         start = find(ast.parse(APP.read_text(encoding='utf-8')), 'start')
         handler = next(n for n in ast.walk(start) if isinstance(n, ast.ExceptHandler)
                        and isinstance(n.type, ast.Name) and n.type.id == 'KeyboardInterrupt')
         exec(compile(ast.Module(body=handler.body, type_ignores=[]), str(APP), 'exec'),
-             {'self': self.runtime, 'G': self.engine, 'moments_reader': None})
+             {'self': self.runtime, 'G': self.engine, 'moments_reader': None, 'file_send_stop': file_send_stop})
+        file_send_stop.set.assert_called_once()
         self.assertTrue(runner.stopped)
         self.assertTrue(runner.wake.is_set())
         self.runtime.pipeline.close.assert_called_once_with(wait=False)

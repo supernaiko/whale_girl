@@ -157,6 +157,31 @@ function reasoningTokensOf(json) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+function usageOf(json) {
+  const u = json && json.usage;
+  if (!u) return null;
+  const promptTokens = Number(u.prompt_tokens) || 0;
+  // DeepSeek、OpenAI 兼容服务和 OpenCode Go 使用不同的缓存命中字段。
+  const opencodeTokens = u.opencode && u.opencode.tokens;
+  const details = u.prompt_tokens_details || {};
+  const rawHit = Number(opencodeTokens && opencodeTokens.cache_read)
+    || Number(details.cached_tokens)
+    || Number(u.prompt_cache_hit_tokens)
+    || 0;
+  const hit = Math.min(promptTokens, Math.max(0, Number.isFinite(rawHit) ? rawHit : 0));
+  const completionTokens = Number(u.completion_tokens) || 0;
+  return {
+    promptTokens,
+    promptCacheHitTokens: hit,
+    promptCacheMissTokens: Number(u.prompt_cache_miss_tokens) || Math.max(0, promptTokens - hit),
+    completionTokens,
+    totalTokens: Number(u.total_tokens) || promptTokens + completionTokens,
+    // 思考 token 已计入 completion，单独保留供诊断。
+    reasoningTokens: reasoningTokensOf(json),
+    at: Date.now(),
+  };
+}
+
 function requestIdOf(context) {
   if (context === undefined || context === null) return undefined;
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
@@ -443,39 +468,39 @@ class DeepSeekClient {
   }
 
   /** 记下 API 返回的 usage（不打印内容，只记数字） */
-  _recordUsage(json, purpose = 'background', requestId) {
-    const u = json && json.usage;
-    if (!u) return;
-    const promptTokens = Number(u.prompt_tokens) || 0;
-    // 缓存命中字段各家不一样：
-    //   DeepSeek 原生 → prompt_cache_hit_tokens
-    //   OpenAI 兼容 / OpenCode Go → prompt_tokens_details.cached_tokens
-    //   OpenCode Go 账单 → opencode.tokens.cache_read
-    // 以前只读第一种，用 OpenCode 时界面/日志一直显示「命中 0」，其实前缀缓存是命中的。
-    const opencodeTokens = u.opencode && u.opencode.tokens;
-    const details = u.prompt_tokens_details || {};
-    const rawHit = Number(opencodeTokens && opencodeTokens.cache_read)
-      || Number(details.cached_tokens)
-      || Number(u.prompt_cache_hit_tokens)
-      || 0;
-    const hit = Math.min(promptTokens, Math.max(0, Number.isFinite(rawHit) ? rawHit : 0));
-    const miss = Number(u.prompt_cache_miss_tokens) || Math.max(0, promptTokens - hit);
-    this.lastUsage = {
-      promptTokens,
-      promptCacheHitTokens: hit,
-      promptCacheMissTokens: miss,
-      completionTokens: Number(u.completion_tokens) || 0,
-      totalTokens: Number(u.total_tokens) || promptTokens + (Number(u.completion_tokens) || 0),
-      // 思考 token 计入 completion：单独记一份，日志里才看得出「是不是全用来想了」
-      reasoningTokens: reasoningTokensOf(json),
-      at: Date.now(),
-    };
+  _recordUsage(json, purpose = 'background', requestId, requestModel = this) {
+    const usage = usageOf(json);
+    if (!usage) return;
+    this.lastUsage = usage;
     this.usageSeq += 1;
-    const event = { seq: this.usageSeq, purpose, ...this.lastUsage };
+    const event = { seq: this.usageSeq, purpose, ...usage };
     if (requestId !== undefined) event.requestId = requestId;
     this.usageEvents.push(event);
     // 只留最近 64 次：够一轮里的重试，也不会把内存越攒越大
     if (this.usageEvents.length > 64) this.usageEvents.splice(0, this.usageEvents.length - 64);
+    this._appendCostUsage(usage, purpose, requestModel);
+  }
+
+  _appendCostUsage(usage, purpose, { provider, model }) {
+    const dir = this.config.paths?.dataDir;
+    if (!dir || provider !== 'deepseek') return;
+    const line = JSON.stringify({
+      at: usage.at, purpose, model,
+      prompt: usage.promptTokens, cached: usage.promptCacheHitTokens,
+      completion: usage.completionTokens, reasoning: usage.reasoningTokens,
+    }) + '\n';
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'usage.jsonl');
+      const size = fs.statSync(file, { throwIfNoEntry: false })?.size || 0;
+      // 同一内核的各请求不能在轮转和追加之间交错。
+      if (size && size + Buffer.byteLength(line) > 5 * 1024 * 1024) {
+        fs.renameSync(file, path.join(dir, 'usage.1.jsonl'));
+      }
+      fs.appendFileSync(file, line);
+    } catch (err) {
+      this.logger?.warn('用量落盘失败：' + describeError(err));
+    }
   }
 
   /**
@@ -770,6 +795,7 @@ class DeepSeekClient {
           thinkingParam,
           bigBudget,
         });
+        const requestModel = this.runtime;
         const { res } = await this._open(payload, { stream: false, signal });
         if (res.statusCode !== 200) throw await this._errorFrom(res, { signal });
         const raw = await this._readAll(res, { signal });
@@ -779,7 +805,7 @@ class DeepSeekClient {
         } catch {
           throw new LlmError(FRIENDLY.empty, { code: 'bad_json', detail: 'invalid json: ' + textMeta(raw) });
         }
-        this._recordUsage(json, purpose, requestId);
+        this._recordUsage(json, purpose, requestId, requestModel);
         // HTTP 200 也可能带错误体（网关 / 反向代理 / 部分兼容服务会这么干）。
         // 以前这里直接当「模型没说话」吞成空响应，日志里只剩一句「空泡泡」，
         // 真正的限流原因全丢了。
@@ -935,11 +961,14 @@ class DeepSeekClient {
         });
         // OpenAI 推理模型没有 temperature 字段，别为了数 token 又塞回去
         if ('temperature' in payload) payload.temperature = 0;
+        const requestModel = this.runtime;
         const { res } = await this._open(payload, { stream: false, signal: controller.signal });
         if (res.statusCode !== 200) throw await this._errorFrom(res, { signal: controller.signal });
         const raw = await this._readAll(res, { signal: controller.signal });
         const json = JSON.parse(raw);
-        const n = Number(json && json.usage && json.usage.prompt_tokens);
+        const usage = usageOf(json);
+        if (usage) this._appendCostUsage(usage, 'token-count', requestModel);
+        const n = usage?.promptTokens;
         return Number.isFinite(n) && n > 0 ? n : null;
       } finally {
         clearTimeout(timer);
@@ -970,6 +999,7 @@ class DeepSeekClient {
     const requestId = requestIdOf(requestContext);
     this.lastUsage = null;
     const payload = this.buildPayload({ system, turns, stream: true });
+    const requestModel = this.runtime;
     const { req, res } = await this._open(payload, { signal, stream: true });
     if (res.statusCode !== 200) throw await this._errorFrom(res);
     res.setEncoding('utf8');
@@ -1003,7 +1033,7 @@ class DeepSeekClient {
           if (json?.error) {
             throw new LlmError(FRIENDLY.default, { code: 'stream_error', detail: String(json.error.message || '') });
           }
-          if (json && json.usage) this._recordUsage(json, purpose, requestId);
+          if (json && json.usage) this._recordUsage(json, purpose, requestId, requestModel);
           const finish = json?.choices?.[0]?.finish_reason;
           if (finish) lastFinish = finish;
           const delta = json?.choices?.[0]?.delta;

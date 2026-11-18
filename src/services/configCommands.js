@@ -37,8 +37,18 @@ function prepareMomentsPublishPatch(body, current = {}) {
     patch['moments.publishEnabled'] = featureEnabled && body.enabled === true;
   }
   if (own(body, 'withImage')) patch['moments.publishWithImage'] = body.withImage === true;
-  if (own(body, 'interval')) patch['moments.publishIntervalHours'] = body.interval;
-  if (own(body, 'maxPerDay')) patch['moments.publishMaxPerDay'] = body.maxPerDay;
+  if (own(body, 'interval') || own(body, 'intervalHours')) {
+    const interval = own(body, 'intervalHours') ? body.intervalHours : body.interval;
+    patch['moments.publishIntervalHours'] = interval;
+    patch['moments.intervalHours'] = interval;
+  }
+  if (own(body, 'maxPerDay')) {
+    patch['moments.publishMaxPerDay'] = body.maxPerDay;
+    patch['moments.maxPerDay'] = body.maxPerDay;
+  }
+  for (const key of ['activeStart', 'activeEnd', 'minGapHours', 'attemptProbability', 'muteDate']) {
+    if (own(body, key)) patch['moments.' + key] = body[key];
+  }
   return patch;
 }
 

@@ -1,0 +1,14 @@
+{
+  "Id": "yxn-gate",
+  "Name": "接话判定",
+  "Author": "supernaiko",
+  "Version": "0.1.0",
+  "MinAppVersion": "4.1.2",
+  "Description": "群聊里判断这条消息该不该接：只负责在没被 @ 时把她叫醒，其余一律放过，不抢宿主的规则。",
+  "ResultLabel": "接话",
+  "Api": 4,
+  "Kind": "message",
+  "Hooks": ["chat.pre_reply"],
+  "Permissions": ["system.full"],
+  "ExecutionTimeoutMs": 20000
+}

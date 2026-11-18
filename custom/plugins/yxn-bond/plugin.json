@@ -1,0 +1,15 @@
+{
+  "Id": "yxn-bond",
+  "Name": "心情与好感",
+  "Author": "supernaiko",
+  "Version": "0.1.0",
+  "MinAppVersion": "4.1.2",
+  "Description": "记录鲸鲸自己的心情起伏，以及对每个人的亲近和信任；只注入一句状态，不改事实、不报数字。",
+  "ResultLabel": "心情",
+  "Api": 4,
+  "Kind": "message",
+  "Hooks": ["chat.pre_reply", "chat.prompt", "timer.tick"],
+  "Permissions": ["system.full"],
+  "ExecutionTimeoutMs": 20000,
+  "IntervalSeconds": 30
+}

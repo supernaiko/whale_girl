@@ -66,6 +66,24 @@ test('标记在句尾 + 正文：分类取到，正文干净', () => {
   assert.equal(out.joined.replace(/\s/g, ''), '今天风好大别穿裙子');
 });
 
+test('无分隔符的半截标记保留同一行正文，下一行的表情照常识别', () => {
+  const out = fin('答复 [[sticker 后半句照常发\n[[sticker:开心]]');
+  assert.equal(out.joined.replace(/\s/g, ''), '答复后半句照常发');
+  assert.equal(out.decision.stickerCategory, '开心');
+});
+
+test('半截标记和同一行的完整标记之间保留正文', () => {
+  const out = fin('开头 [[sticker 正文 [[sticker:开心]] 结尾');
+  assert.equal(out.joined.replace(/\s/g, ''), '开头正文结尾');
+  assert.equal(out.decision.stickerCategory, '开心');
+});
+
+test('正文含小写转换时会展开的字符，表情标记仍按原文偏移删除', () => {
+  const out = fin('İ[[STICKER:开心]]明天见');
+  assert.equal(out.joined, 'İ明天见');
+  assert.equal(out.decision.stickerCategory, '开心');
+});
+
 test('多个标记：只取第一个分类，全部删掉，正文不残缺', () => {
   const out = fin('开头 [[sticker:炸毛]] 中间 [[sticker:开心]] 结尾');
   assert.equal(out.decision.stickerCategory, '炸毛');

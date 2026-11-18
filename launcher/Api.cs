@@ -43,7 +43,7 @@ namespace WhaleLauncher
     {
         // 超时统一由每次请求的 CancellationToken 控制：账号扫描要 45 秒，状态轮询只要 3 秒，
         // HttpClient.Timeout 只能设一个值，放这里会逼着页面各建一套客户端。
-        private static readonly HttpClient Http = new HttpClient(new HttpClientHandler { UseProxy = false })
+        private static readonly HttpClient Http = new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false })
         {
             Timeout = Timeout.InfiniteTimeSpan
         };
@@ -123,6 +123,20 @@ namespace WhaleLauncher
         /// <summary>对象直接序列化，别再手拼 JSON；字符串转义、数字格式、嵌套层级都由序列化器负责。</summary>
         public static Task<ApiResult> PostJson(string baseUrl, string path, object body, int timeoutSeconds = 10)
             => Post(baseUrl, path, JsonSerializer.Serialize(body, JsonOptions), timeoutSeconds);
+
+        internal static async Task<ApiResult> SendAuthenticatedAsync(string baseUrl, string path, object body,
+            string token, CancellationToken cancellationToken)
+        {
+            using var request = new HttpRequestMessage(body == null ? HttpMethod.Get : HttpMethod.Post, baseUrl + path);
+            request.Headers.Add("x-bot-token", token);
+            if (body != null)
+                request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            using var response = await Http.SendAsync(request, timeout.Token);
+            return await Wrap(response);
+        }
 
         /// <summary>写配置：patch 里的键可以是点号路径（如 care.everyMinutes），也可以是嵌套对象。</summary>
         public static Task<ApiResult> PatchConfig(string baseUrl, IDictionary<string, object> patch, int timeoutSeconds = 10)

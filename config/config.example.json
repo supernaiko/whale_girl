@@ -13,7 +13,17 @@
     "_说明": "朋友圈读取结果只保存最近一次快照到 data/moments/latest.json，不写聊天记忆。autoLike=true 时，读取后由模型判断是否点赞：只处理积极、非求助/丧事、正文足够长的动态，每天最多 autoLikeMaxPerDay 条，执行后不自动重试。autoReadEveryHours=0 表示只在主人问起或启动器手动读取；设为 4~12 会按小时定时读取，夜间 0~7 点不读。",
     "autoLike": true,
     "autoLikeMaxPerDay": 3,
-    "autoReadEveryHours": 0
+    "autoReadEveryHours": 0,
+    "_发表说明": "自动发表须在启动器确认开启并绑定微信账号。按 env.timezone 作息，每小时最多抽样一次；仅有当天素材且模型愿意说话时入队，允许连续多日不发。intervalHours/publishIntervalHours 只保留兼容，不再决定发表周期。maxPerDay=0 沿用旧版不限额度语义。",
+    "publishFeatureEnabled": false,
+    "publishEnabled": false,
+    "publishIntervalHours": 6,
+    "publishMaxPerDay": 2,
+    "activeStart": "08:00",
+    "activeEnd": "23:30",
+    "minGapHours": 3,
+    "attemptProbability": 0.25,
+    "muteDate": ""
   },
   "server": {
     "host": "127.0.0.1",

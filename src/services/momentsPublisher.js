@@ -9,6 +9,7 @@ const { describeError } = require('../infra/errors');
 const { installPresets } = require('../adapters/stickerPresets');
 const { fetchPhoto } = require('./momentsPhotos');
 const { searchPosts, download: downloadWeibo } = require('./weiboPosts');
+const { scheduleSettings, eligibility } = require('./momentsScheduler');
 
 const HOUR = 3600000;
 const SENSITIVE = /https?:\/\/|www\.|wxid_|@|\d{6,}|电话|住址|身份证|密钥|密码|验证码|订单号|银行卡|患者|病历|转账|私聊/i;
@@ -110,8 +111,8 @@ function timeBrief(now = (process.env.WHALE_NOW ? new Date(process.env.WHALE_NOW
 }
 
 class MomentsPublisher {
-  constructor({ config, store, llm, logger, now = Date.now }) {
-    Object.assign(this, { config, store, llm, logger, now });
+  constructor({ config, store, llm, logger, now = Date.now, random = Math.random }) {
+    Object.assign(this, { config, store, llm, logger, now, random });
     this.file = path.join(config.paths.dataDir, 'moments', 'publish-state.json');
     this.images = path.join(config.paths.dataDir, 'moments', 'post-images');
     this.job = null;
@@ -132,14 +133,15 @@ class MomentsPublisher {
 
   settings() {
     const m = this.config.moments || {};
+    const schedule = scheduleSettings({ ...m, timezone: time.resolveTimeZone(this.config) });
     return {
+      ...schedule,
       featureEnabled: m.publishFeatureEnabled === true,
       enabled: m.publishEnabled === true,
       withImage: m.publishWithImage === true,
       photoPrimary: m.photoPrimary === true,
       account: String(m.publishAccount || ''),
-      interval: (Number.isFinite(Number(m.publishIntervalHours)) && Number(m.publishIntervalHours) > 0 ? Number(m.publishIntervalHours) : 6),
-      maxPerDay: (Number.isSafeInteger(Number(m.publishMaxPerDay)) && Number(m.publishMaxPerDay) >= 0 ? Number(m.publishMaxPerDay) : 1),
+      interval: schedule.intervalHours,
     };
   }
 
@@ -170,8 +172,12 @@ class MomentsPublisher {
     this.reconcile();
     const settings = this.settings();
     const lastCheck = this.scheduleAnchor(settings);
+    const nextCheckAt = lastCheck === null ? null : lastCheck + HOUR;
     return {
-      nextCheckAt: lastCheck === null ? null : lastCheck + settings.interval * HOUR,
+      nextCheckAt,
+      nextEligibleAt: nextCheckAt === null ? null : eligibility(Math.max(this.now(), nextCheckAt), this.state, settings).nextEligibleAt,
+      todayCount: this.dailyCount(),
+      muteDate: settings.muteDate,
       status: this.stateError ? 'state_error' : (this.generating ? 'generating' : this.job?.status || this.state.status || 'idle'),
       count: this.dailyCount(),
       preview: this.preview?.text || '',
@@ -211,12 +217,13 @@ class MomentsPublisher {
 
   async generate(settings, account, revision, manual = false, withImage = settings.withImage) {
     const now = this.now();
-    const since = Math.max(now - 24 * HOUR, manual ? 0 : Number(this.state.lastSource) || 0);
+    const since = Math.max(manual ? now - 24 * HOUR : time.startOfDay(now, settings.timezone) - 1,
+      manual ? 0 : Number(this.state.lastSource) || 0);
     // 会话视图的 lastActiveAt 创建后不会跟着更新，优先按实际消息时间排序。
-    const keys = [...this.store.sessions.entries()].filter(([key]) => /^wechat:[gu]:/.test(key))
+    const keys = [...(this.store?.sessions || new Map()).entries()].filter(([key]) => /^wechat:[gu]:/.test(key))
       .map(([key, session]) => ({ key, lastActiveAt: session.messages?.at(-1)?.ts ?? session.lastActiveAt ?? 0 }))
       .sort((a, b) => b.lastActiveAt - a.lastActiveAt).slice(0, 32).map(session => session.key);
-    const entries = keys.flatMap(key => this.store.messages(key, 30))
+    const entries = [...keys.flatMap(key => this.store.messages(key, 30)), ...this.extraMaterials(keys, now)]
       .filter(m => m.role === 'user' && m.ts > since && m.ts <= now && !m.error
         && typeof m.text === 'string' && m.text.length <= 220 && !SENSITIVE.test(m.text))
       .sort((a, b) => b.ts - a.ts).slice(0, 20);
@@ -229,8 +236,15 @@ class MomentsPublisher {
       identities.reduce((text, name) => text.replaceAll(name, '某人'), line)
     ).filter(x => x.length >= 4))];
     this.logger?.info?.('[moments] keys=' + keys.length + ' entries=' + entries.length + ' lines=' + lines.length);
-    if (lines.length < 2) { this.save({ status: 'no_material' }); return; }
+    if (!lines.length) { this.save({ status: 'no_material' }); return; }
     if (!this.llm || this.llm.isMock) { this.save({ status: 'model_unavailable' }); return; }
+    const bond = this.bondState();
+    const persona = this.personaBrief();
+    const moodLine = bond
+      ? ('你此刻心情：' + (bond.label || '说不太清') + (bond.why ? '（' + bond.why + '）' : '') + '。')
+      : '';
+    const personaLine = '你是「' + persona.name + '」，平时说话温柔但有点小倔、嘴硬心软，不是甜腻人设，也不高冷；'
+      + (persona.desc ? '语气参考：' + persona.desc : '');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
     let draft = null;
@@ -243,6 +257,9 @@ class MomentsPublisher {
         maxTokens: 900,
         system: (() => { const t = timeBrief(); return '现在是北京时间 ' + t.text + '。' + t.guide
           + '文案的时间、场景要跟这个点对得上。' })()
+          + personaLine
+          + moodLine
+          + '按上面这个心情发一条，别硬写心情本身；心情好就轻快，不好就丧一点或吐槽，别装。'
           + '为鲸鲸写一条微信朋友圈，第一人称，像随手打的一句，不是文案。'
           + '要求：5~30 字，最多两句；可以只有半句、可以不完整，比如「我去这个面包好好吃」「今天不宜上班」「吃面了」「累麻了，今天一堆事」。'
           + '口语，可以用「我去」「啊啊」「好累」「绝了」「行吧」这类语气；不解释、不总结、不讲道理、不写鸡汤、不用成语和书面词；'
@@ -254,7 +271,16 @@ class MomentsPublisher {
         turns: [{ role: 'user', content: JSON.stringify([...lines].reverse()) + note }],
         signal: controller.signal,
       });
-      if (process.env.WHALE_DEBUG) console.log('[raw]', String(raw).slice(0, 300));
+      if (process.env.WHALE_DEBUG) this.logger?.debug?.('[moments] model_result length=' + String(raw || '').length);
+      // 空结果是本轮不想说话，不应用重试把它变成一条硬凑的动态。
+      let result;
+      try { result = JSON.parse(String(raw).trim()); } catch { result = undefined; }
+      if (!String(raw ?? '').trim() || result === null
+          || (result && Object.hasOwn(result, 'text') && (result.text === null || result.text === ''))
+          || (typeof result?.text === 'string' && !result.text.trim())) {
+        if (revision === this.settingsRevision && this.settingsKey === JSON.stringify(this.settings())) this.save({ status: 'skip_no_text' });
+        return;
+      }
       draft = parseDraft(raw, original, identities);
       }
     } finally { clearTimeout(timeout); }
@@ -264,12 +290,17 @@ class MomentsPublisher {
     if (this.state.lastHash === hash) { this.save({ status: 'filtered' }); return; }
     let photo = '';
     let sourceText = '';
-    if (withImage && draft.imageQuery) {
+    if (withImage && (draft.imageQuery || bond)) {
       await this.prepareImages();
-      // 先从微博捞一条真帖子：图文都是真人发的，文案照着它改，比凭空写更像人。
+      // 先从微博捞一条真帖子：优先按「此刻心情」搜，找不到再退回按画面词搜。
       try {
-        const posts = await searchPosts(draft.imageQuery, { cookie: this.weiboCookie() });
-        const pick = posts.find(p => p.images.length && p.text.length >= 10);
+        const moodWord = bond ? this.moodQuery(bond) : '';
+        let posts = await searchPosts(moodWord || draft.imageQuery, { cookie: this.weiboCookie() });
+        let pick = posts.find(p => p.images.length && p.text.length >= 10);
+        if (!pick && moodWord && draft.imageQuery) {
+          posts = await searchPosts(draft.imageQuery, { cookie: this.weiboCookie() });
+          pick = posts.find(p => p.images.length && p.text.length >= 10);
+        }
         if (pick) {
           photo = await downloadWeibo(pick.images[0], path.join(this.images, 'weibo'));
           if (photo) sourceText = pick.text;
@@ -322,7 +353,31 @@ class MomentsPublisher {
     // 抓不到真照片就发纯文字，不要塞表情包凑数。
     if (photo) draft.imageQuery = draft.imageQuery || '';
     const wantImage = settings.photoPrimary ? Boolean(photo) : withImage;
-    this.queueDraft(draft, account, settings, { hash: digest(normalized(draft.text)), lastSource: entries[0].ts, manual }, wantImage, photo);
+    this.queueDraft(draft, account, settings, { hash: digest(normalized(draft.text)), lastSource: entries[0].ts, manual,
+      scheduled: !manual }, wantImage, photo);
+  }
+
+  extraMaterials(keys, now) {
+    const materials = [];
+    const today = this.today(now);
+    // 日记只取当天摘要；不把全文或内部动作账本当作朋友圈素材。
+    try {
+      const index = JSON.parse(fs.readFileSync(path.join(this.config.paths.dataDir, 'diary', 'index.json'), 'utf8'));
+      const entry = index.entries?.[today];
+      if (entry) materials.push({ role: 'user', ts: entry.createdAt, text: entry.summary });
+    } catch (err) {
+      if (err.code !== 'ENOENT') this.logger?.warn?.('朋友圈读取日记素材失败：' + describeError(err));
+    }
+    for (const key of keys) {
+      const chat = this.store.chatStore?.chats?.get(key);
+      for (const card of chat?.people?.values() || []) {
+        for (const event of card.events || []) {
+          if (event.deleted || event.deletedAt || (event.date && event.date !== today)) continue;
+          materials.push({ role: 'user', ts: event.createdAt, text: event.summary || event.title, name: card.name });
+        }
+      }
+    }
+    return materials;
   }
 
   weiboCookie() {
@@ -332,6 +387,44 @@ class MomentsPublisher {
       if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
     } catch { /* ignore */ }
     return '';
+  }
+
+  // 读 yxn-bond 当前心情：valence 0~100（越高越好），energy 0~100（越高越有劲）。
+  bondState() {
+    try {
+      const root = this.config?.root || path.resolve(__dirname, '../..');
+      const file = path.join(root, 'data', 'plugins', 'yxn-bond.data', 'bond.json');
+      if (!fs.existsSync(file)) return null;
+      const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const mood = state?.mood || {};
+      const valence = Number(mood.valence);
+      const energy = Number(mood.energy);
+      if (!Number.isFinite(valence) || !Number.isFinite(energy)) return null;
+      return { valence, energy, label: String(mood.label || ''), why: String(mood.why || '') };
+    } catch { return null; }
+  }
+
+  // 心情 → 微博搜什么：找同情绪的人发的帖子，图文都借他们的。
+  moodQuery(bond) {
+    const valence = bond.valence;
+    const energy = bond.energy;
+    const pool = valence >= 68
+      ? (energy >= 60 ? ['今天超开心', '出去玩真舒服', '吃到好吃的了'] : ['今天还挺好', '心里暖暖的', '偷个懒'])
+      : valence >= 45
+        ? (energy >= 60 ? ['出来转转', '随手拍两张', '摸鱼日常'] : ['有点累了', '忙了一整天', '只想躺着'])
+        : (energy >= 55 ? ['不想上班', '烦得很', '今天太累了'] : ['有点 emo', '一个人待着', '心情一般']);
+    const idx = Math.abs(Math.floor(Date.now() / HOUR)) % pool.length;
+    return pool[idx];
+  }
+
+  personaBrief() {
+    try {
+      const root = this.config?.root || path.resolve(__dirname, '../..');
+      const file = path.join(root, 'data', 'persona.json');
+      const persona = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const desc = String(persona.customPrompt || '').replace(/\s+/g, ' ').slice(0, 100);
+      return { name: String(persona.name || '雅小奈'), desc };
+    } catch { return { name: '雅小奈', desc: '' }; }
   }
 
   async prepareImages() {
@@ -377,17 +470,31 @@ class MomentsPublisher {
     this.expire();
     this.reconcile();
     const settings = this.settings();
-    if (this.stateError || !settings.featureEnabled || !account) return null;
+    const log = (eligible, reason) => this.logger?.info?.(`[moments] tick eligible=${eligible} reason=${reason}`);
+    if (this.stateError || !settings.featureEnabled || !account) {
+      log(false, this.stateError ? 'state_error' : !settings.featureEnabled ? 'feature_disabled' : 'account_not_verified');
+      return null;
+    }
     if (this.job?.status === 'queued') {
-      if (this.job.account !== account) return null;
+      if (this.job.account !== account) { log(false, 'account_mismatch'); return null; }
+      if (this.job.scheduled) {
+        const gate = eligibility(this.now(), this.state, settings);
+        if (!gate.eligible) {
+          log(false, gate.reason);
+          this.save({ status: 'idle' });
+          this.job = null;
+          return null;
+        }
+      }
       const today = this.today();
       const count = this.dailyCount();
-      if (!this.job.manual && settings.maxPerDay > 0 && count >= settings.maxPerDay) { this.job = null; return null; }
+      if (!this.job.manual && settings.maxPerDay > 0 && count >= settings.maxPerDay) { log(false, 'daily_limit'); this.job = null; return null; }
       // 保留上次的素材游标。只有桥接明确没点过「发表」，才允许下轮重新选这批素材。
-      this.job.previousSource = { lastHash: this.state.lastHash, lastSource: this.state.lastSource };
+      this.job.previousSource = { lastHash: this.state.lastHash, lastSource: this.state.lastSource,
+        lastPublishAt: this.state.lastPublishAt };
       // 先占额度再交给桥接。退出或回执丢失时，下次启动也不会补发这条。
       this.save({
-        ...(!this.job.manual ? { day: today, count: count + 1 } : {}), status: 'unconfirmed', error: '',
+        ...(!this.job.manual ? { day: today, count: count + 1, lastPublishAt: this.now() } : {}), status: 'unconfirmed', error: '',
         lastHash: this.job.hash, lastSource: this.job.lastSource,
         lastImage: Boolean(this.job.query.image), lastImageCategory: this.job.query.category,
         lastImageReason: this.job.query.imageReason,
@@ -395,21 +502,29 @@ class MomentsPublisher {
       this.job.day = today;
       this.job.status = 'sending';
       this.job.claimedAt = this.now();
+      log(true, this.job.manual ? 'manual_claimed' : 'claimed');
       return { id: this.job.id, action: 'publish', query: this.job.query };
     }
-    if (!settings.enabled || settings.account !== account || this.job || this.generating) return null;
+    if (!settings.enabled || settings.account !== account || this.job || this.generating) {
+      log(false, !settings.enabled ? 'disabled' : settings.account !== account ? 'account_mismatch' : 'busy');
+      return null;
+    }
     const now = this.now();
     const lastCheck = this.scheduleAnchor(settings);
     if (lastCheck === null) {
       // 第一次由绑定账号在线轮询时开始计时，并保存基准以便重启后续算。
       this.save({ scheduleAccount: account, lastCheck: now });
       this.resetSchedule = false;
+      log(false, 'schedule_started');
       return null;
     }
-    // 凌晨不自动发：真人这个点很少发朋友圈，发了也假。
-    const hour = Number(new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false }).format(new Date())) % 24;
-    if (hour < 7) return null;
-    if ((settings.maxPerDay > 0 && this.dailyCount() >= settings.maxPerDay) || now - lastCheck < settings.interval * HOUR) return null;
+    const gate = eligibility(now, this.state, settings);
+    if (!gate.eligible) { log(false, gate.reason); return null; }
+    if (now - lastCheck < HOUR) { log(false, 'hourly_wait'); return null; }
+    // 先保存抽样时刻，重启、空素材和未命中都不能在同一小时重复掷骰。
+    this.save({ lastCheck: now });
+    if (this.random() >= settings.attemptProbability) { log(false, 'jitter_miss'); return null; }
+    log(true, 'attempt');
     this.save({ lastCheck: now, status: 'checking', error: '' });
     this.startGeneration(settings, account);
     return null;
@@ -438,8 +553,10 @@ class MomentsPublisher {
   allowed(id, account) {
     this.expire();
     this.reconcile();
+    const settings = this.settings();
     return this.job?.id === id && this.job.account === account && this.job.status === 'sending'
-      && this.settings().featureEnabled && this.job.revision === this.settingsRevision;
+      && settings.featureEnabled && this.job.revision === this.settingsRevision
+      && (!this.job.scheduled || eligibility(this.now(), {}, settings).eligible);
   }
 
   complete(body) {
