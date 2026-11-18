@@ -195,7 +195,7 @@ test('两种文件指令直接提交，回报本机结果', async () => {
     };
     assert.equal((await pre(command)).action, 'wake');
     const first = await gen(command, { api });
-    assert.match(first.output.text, /本机微信已记录/);
+    assert.match(first.output.text, /已把 .* 发给/);
     assert.equal(first.output.state.pending, undefined);
     assert.deepEqual(calls, [
       { url: '/api/send-file', options: { method: 'POST', body: { chat: target, path: file } } },

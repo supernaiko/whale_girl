@@ -11,6 +11,7 @@ import os
 import re
 import stat
 import time
+import unicodedata
 
 MAX_BYTES = 64 * 1024 * 1024
 IMAGE_TYPES = {'.gif': 'GIF', '.png': 'PNG', '.jpg': 'JPEG', '.jpeg': 'JPEG', '.webp': 'WEBP'}
@@ -213,6 +214,59 @@ def resolve_target(db, shown, username=''):
     return canonical, frozenset(safe)
 
 
+class FileTargetError(ValueError):
+    pass
+
+
+def _file_title(raw):
+    value = re.sub(r'[\u3000\uff01-\uffdc\uffe0-\uffee]+',
+                   lambda match: unicodedata.normalize('NFKC', match[0]), str(raw or ''))
+    value = unicodedata.normalize('NFC', value).strip()
+    bare = re.sub(r'^微信[\s:·|–—-]*|[\s:·|–—-]*微信$', '', value).strip()
+    return bare or value
+
+
+def file_alias_match(current, aliases):
+    title = _file_title(current)
+    return bool(title) and any(title == _file_title(alias) for alias in aliases)
+
+
+def resolve_file_target(db, requested):
+    """从当前账号的联系人库核对归一化后的标题是否仍然唯一。"""
+    key = _file_title(requested)
+    if not key:
+        raise FileTargetError('empty_target')
+    conn = db._contact_conn()
+    if conn is None:
+        raise FileTargetError('contact_db_unavailable')
+    try:
+        rows = conn.execute('SELECT username, nick_name, remark FROM contact').fetchall()
+    finally:
+        conn.close()
+    names_by_user = {'filehelper': {'filehelper', '文件传输助手'}}
+    owners = {}
+    for username, nick, remark in rows:
+        username = str(username or '').strip()
+        if username:
+            names_by_user.setdefault(username, set()).update(
+                str(name).strip() for name in (username, nick, remark) if str(name or '').strip())
+    # SQLite LIKE 看不到全半角等价项。它们必须参与查重，才能用同一规则核验窗口。
+    for username, names in names_by_user.items():
+        for name in names:
+            for title in {_file_title(name), _file_title(_input_title(name))}:
+                if title:
+                    owners.setdefault(title, set()).add(username)
+    candidates = owners.get(key, set())
+    if not candidates:
+        raise FileTargetError('target_not_found')
+    if len(candidates) != 1:
+        raise FileTargetError('target_ambiguous')
+    canonical = next(iter(candidates))
+    aliases = frozenset(name for name in names_by_user[canonical]
+                        if owners[_file_title(name)] == {canonical})
+    return canonical, aliases
+
+
 def account_evidence_allowed(*, configured_account, db_account, reason, explicit_pin,
                              account_dirs, visible_windows=None):
     """May the current window be trusted for this account?
@@ -392,23 +446,24 @@ def _uia_bound_to(uia, hwnd):
         return False
 
 
-def quarantined_input_value(gui, hwnd, aliases):
+def quarantined_input_value(gui, hwnd, aliases, *, file_mode=False):
     """Read-only proof for a quarantined target; never creates/rebinds UIA.
 
     None means unavailable or a different target. Empty string is useful only
     after nonempty draft/value evidence was observable for this quarantine.
     """
+    match = file_alias_match if file_mode else _alias_match
     try:
         if gui is None or int(gui.main_hwnd) != hwnd:
             return None
         uia = getattr(gui, '_uia', None)
         if (uia is None or not _uia_bound_to(uia, hwnd)
                 or uia._win is None or int(uia._win.NativeWindowHandle) != hwnd
-                or not _alias_match(uia.current_chat(), aliases)):
+                or not match(uia.current_chat(), aliases)):
             return None
         control = uia._chat_input()
         if (control is None or getattr(control, 'ControlTypeName', '') != 'EditControl'
-                or not _alias_match(_input_title(getattr(control, 'Name', '')), aliases)
+                or not match(_input_title(getattr(control, 'Name', '')), aliases)
                 or 'chat_input_field' not in str(getattr(control, 'AutomationId', '')).split('.')):
             return None
         pattern = control.GetValuePattern()
@@ -432,6 +487,7 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
     touched = False
     draft_observed = False
     file_mode = file_expected is not None
+    match = file_alias_match if file_mode else _alias_match
     if file_mode:
         try:
             from .file_transport import validate_file, copy_file_to_clipboard, send_file_key, FileChangedError
@@ -445,9 +501,14 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
 
     try:
         if not gate():
-            return result('cancelled', 'stickers are disabled or generation expired')
-        if not aliases or not hwnd or not account_valid() or not activity_allowed():
-            return result('failed', 'account or activity gate rejected the sticker')
+            return result('cancelled', 'file permission changed' if file_mode
+                          else 'stickers are disabled or generation expired')
+        if not aliases or not hwnd or not account_valid():
+            return result('failed', 'account window or target evidence unavailable' if file_mode
+                          else 'account or activity gate rejected the sticker')
+        if not activity_allowed():
+            return result('failed', 'file activity gate rejected the send' if file_mode
+                          else 'account or activity gate rejected the sticker')
         desktop = desktop or WindowsDesktop()
         identity = db_identity(db)
         baseline = watermark(db, username)
@@ -460,11 +521,11 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
             if (not desktop.foreground(hwnd) or int(getattr(gui, 'main_hwnd', 0)) != hwnd
                     or not _uia_bound_to(uia, hwnd)
                     or uia._win is None or int(uia._win.NativeWindowHandle) != hwnd
-                    or not _alias_match(uia.current_chat(), aliases)):
+                    or not match(uia.current_chat(), aliases)):
                 return None
             control = uia._chat_input()
             if (control is None or getattr(control, 'ControlTypeName', '') != 'EditControl'
-                    or not _alias_match(_input_title(getattr(control, 'Name', '')), aliases)):
+                    or not match(_input_title(getattr(control, 'Name', '')), aliases)):
                 return None
             aid = str(getattr(control, 'AutomationId', '') or '')
             if 'chat_input_field' not in aid.split('.') or (require_focus and not desktop.focused(control, hwnd)):
@@ -491,14 +552,18 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
                 if uia._win is None or int(uia._win.NativeWindowHandle) != hwnd:
                     return 'UIA root window changed'
                 chat = uia.current_chat()
-                if not _alias_match(chat, aliases):
+                if not match(chat, aliases):
+                    if file_mode:
+                        return 'current chat title did not match'
                     return 'current chat title is %r, expected one of %r' % (chat, sorted(aliases))
                 control = uia._chat_input()
                 if control is None:
                     return 'chat input control not found'
                 if getattr(control, 'ControlTypeName', '') != 'EditControl':
                     return 'chat input is not an EditControl'
-                if not _alias_match(_input_title(getattr(control, 'Name', '')), aliases):
+                if not match(_input_title(getattr(control, 'Name', '')), aliases):
+                    if file_mode:
+                        return 'chat input title did not match'
                     return 'chat input title is %r, expected one of %r' % (
                         getattr(control, 'Name', ''), sorted(aliases))
                 if 'chat_input_field' not in str(getattr(control, 'AutomationId', '') or '').split('.'):
@@ -507,7 +572,7 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
                     return 'chat input does not have keyboard focus'
                 return ''
             except Exception as exc:                       # noqa: BLE001
-                return 'guard read failed: %r' % (exc,)
+                return 'guard read failed: %s' % type(exc).__name__ if file_mode else 'guard read failed: %r' % (exc,)
 
         control = guard(require_focus=False)
         if control is None:
@@ -526,7 +591,9 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
             return result('failed', 'input contains a draft; clear it manually before sending')
         # Validation can take time. Repeat guards before changing the clipboard/pasting.
         if check_path(approved)[1] != fingerprint:
-            return result('failed', 'file_changed' if file_mode else 'sticker file changed before paste')
+            if file_mode:
+                return {**result('failed', 'file_changed'), 'reason': 'file identity changed before paste'}
+            return result('failed', 'sticker file changed before paste')
         # 后台文字发送可能留下焦点在会话列表。只给已核验的空输入框设置一次焦点，
         # 并重新读取账号、会话、控件和真实键盘焦点，再允许粘贴。
         control = guard(require_focus=False)
@@ -575,6 +642,9 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
                           draft_may_remain=True, draft_observed=draft_observed)
         _post = desktop.value(control)
         if not _is_attachment(_post):
+            if file_mode:
+                return result('unconfirmed', 'attachment draft changed before Enter',
+                              draft_may_remain=True, draft_observed=draft_observed)
             # 带上实际读到的值，才能判断是「微信把附件又转成文字」还是「读不到」
             return result('unconfirmed',
                           'send gates changed after paste (input reads %r); Enter not pressed; clear draft manually; do not retry'
@@ -593,10 +663,15 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
         return outcome
     except Exception as exc:
         if touched:
-            return result('unconfirmed', 'attachment action is uncertain; a draft may remain; do not retry',
+            reason = ('file validation failed after paste: ' + str(exc)
+                      if file_mode and isinstance(exc, FileChangedError)
+                      else 'attachment action is uncertain; a draft may remain; do not retry')
+            return result('unconfirmed', reason,
                           draft_may_remain=True, draft_observed=draft_observed)
         if isinstance(exc, StickerImageError):
             return result('failed', str(exc))
         if file_mode and isinstance(exc, FileChangedError):
-            return result('failed', 'file_changed')
+            return {**result('failed', 'file_changed'), 'reason': str(exc)}
+        if file_mode:
+            return result('failed', 'file transport raised ' + type(exc).__name__)
         return result('failed', 'sticker safety checks or transport are unavailable')

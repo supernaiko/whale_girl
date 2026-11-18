@@ -1016,8 +1016,10 @@ async function dispatch(ctx, settings, state) {
     }
     const checked = await fileForSend(settings, fileSend.path);
     if (checked.error) return { text: checked.error };
+    // 「发给我/发给我自己」等于发到当前会话。
+    const target = /^(我|自己|本人|主人|我本人)$/.test(fileSend.chat) ? chatId : fileSend.chat;
     return runConfirmed(ctx, settings, chatId, { kind: 'send-file', label: '发文件给「' + fileSend.chat + '」',
-      at: Date.now(), file: checked.file, fingerprint: checked.fingerprint, target: fileSend.chat, senderId: message.senderId });
+      at: Date.now(), file: checked.file, fingerprint: checked.fingerprint, target, senderId: message.senderId });
   }
   if (/^发文件(?:\s|$)/.test(body)) return { text: '这样说：发文件 D:\\报告\\a.pdf 给 文件传输助手。' };
 
@@ -1094,17 +1096,35 @@ async function runConfirmed(ctx, settings, chatId, pending) {
       return { text: '未能获取文件提交结果，请先查看目标会话。' };
     }
     if (result.status === 404) return { text: '微信文件发送需要鲸鲸 4.2.0 的文件接口。' };
-    const jobId = result.body?.jobId;
+    let jobId = result.body?.jobId;
     if (!result.ok || result.body?.ok !== true || !jobId) {
       return { text: '文件任务未入队。' + (result.body?.error || '') };
     }
     // 留出回复时间。桥接正在处理其他消息时，可用任务号查队列状态。
-    for (let attempt = 0; attempt < 15; attempt++) {
+    let retried = false;
+    for (let attempt = 0; attempt < 20; attempt++) {
       try {
         const status = await whale.api('/api/send-file/status?id=' + encodeURIComponent(jobId));
         if (!status.ok) break;
-        if (status.body?.status === 'submitted') return { text: '本机微信已记录发给「' + pending.target + '」的文件消息。' };
-        if (status.body?.error) return { text: status.body.error };
+        const state = status.body?.status;
+        if (state === 'submitted') return { text: '已把 ' + path.basename(checked.file) + ' 发给「' + pending.target + '」，你那边看一下收到没。' };
+        // 打不开目标会话多半是窗口没切过来，隔一秒再提交一次，别直接报失败。
+        if (state === 'target_unavailable' && !retried) {
+          retried = true;
+          await new Promise(resolve => setTimeout(resolve, 900));
+          try {
+            const again = await whale.api('/api/send-file', { method: 'POST', body: { chat: pending.target, path: checked.file } });
+            const nextId = again.body?.jobId;
+            if (nextId) { jobId = nextId; attempt = 0; continue; }
+          } catch { /* 落到下面的兜底文案 */ }
+        }
+        if (status.body?.error) {
+          const why = String(status.body.error);
+          if (state === 'target_unavailable') {
+            return { text: '文件排上队了，但微信那边没能定位到「' + pending.target + '」这个会话（可能窗口被别的聊天占着）。任务号 ' + jobId + '，稍后再发一次也行。' };
+          }
+          return { text: why };
+        }
       } catch {
         break;
       }

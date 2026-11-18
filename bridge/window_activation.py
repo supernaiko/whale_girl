@@ -2,7 +2,7 @@
 """不合并输入队列的窗口激活兼容层。"""
 
 
-def activate(hwnd):
+def activate(hwnd, *, retry=False):
     import ctypes
     from ctypes import wintypes
     import win32gui
@@ -19,6 +19,20 @@ def activate(hwnd):
     elif not win32gui.IsWindowVisible(hwnd):
         show(hwnd, 4)
     try:
+        if retry:
+            import time
+            import win32api
+            import win32con
+
+            modifiers = (win32con.VK_MENU, win32con.VK_CONTROL, win32con.VK_SHIFT,
+                         win32con.VK_LWIN, win32con.VK_RWIN)
+            if not any(win32api.GetAsyncKeyState(key) & 0x8000 for key in modifiers):
+                # 和窗口还原用同一办法解除前台锁，避开用户正在按的组合键。
+                try:
+                    win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+                finally:
+                    win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+                time.sleep(0.04)
         win32gui.SetForegroundWindow(hwnd)
     except Exception:
         return False

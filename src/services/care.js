@@ -164,14 +164,21 @@ function buildCarePrompt({ persona = {}, recent = [], name = '', hour = null } =
     '要求：',
     '- 一句话，8~20 个字，像真人随手发的一条微信。',
     '- 可以是「在干啥呢」「忙完了没，累不累」这种感觉，但不要每次都说同一句。',
-    '- 可以顺着最近聊的内容接一句，但别翻旧账、别追问隐私。',
+    '- 可以顺着最近聊的内容接一句（聊到吃什么就问那句吃的），但别翻旧账、别追问隐私。',
+    '- 没有具体话题时，挑一个具体的小事问：吃了什么、在改什么、今天顺不顺，别问「在忙吗」这种空话。',
+    '- 不要连着两次问同一个意思；像「忙完了没」和「还在忙吗」算同一句。',
     '- 不要自我介绍，不要说「我是 AI / 模型」，不要解释为什么找他。',
     '- 不要用颜文字堆砌，最多一个；不要用「~」。',
     '- 只输出这一句话本身。',
   ];
   if (Number.isFinite(hour)) {
     const part = hour < 6 ? '凌晨' : hour < 11 ? '早上' : hour < 14 ? '中午' : hour < 18 ? '下午' : hour < 23 ? '晚上' : '深夜';
-    lines.push(`- 现在是${part}，语气跟这个时间搭一点。`);
+    const now = new Date();
+    const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][now.getDay()];
+    const dateLine = `${now.getMonth() + 1} 月 ${now.getDate()} 日 ${week}`;
+    lines.push(`- 现在是${part}（${dateLine}），语气跟这个时间搭一点；工作日和周末的口气可以不一样。`);
+    if (now.getMonth() === 11 && now.getDate() >= 20 && now.getDate() <= 26) lines.push('- 快到圣诞节了，可以顺嘴提一句。');
+    if (now.getMonth() === 0 && now.getDate() <= 3) lines.push('- 刚过元旦，可以顺嘴提一句新年。');
   }
   const user = recent.length
     ? '最近你们聊的（旧→新，只用来参考语气和话题，别复述）：\n' + recent.slice(-8).join('\n')

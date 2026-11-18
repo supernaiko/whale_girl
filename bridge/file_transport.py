@@ -16,9 +16,14 @@ def validate_file(path, expected):
             raise FileChangedError('需要绝对文件路径')
         real = candidate.resolve(strict=True)
         info = real.stat()
-        if (real != candidate or not stat.S_ISREG(info.st_mode) or info.st_size > 1024 ** 3
-                or (info.st_size, str(info.st_mtime_ns)) != expected):
-            raise FileChangedError('文件不再匹配入队时的路径、大小或修改时间')
+        if real != candidate:
+            raise FileChangedError('文件解析路径与入队时不一致')
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 1024 ** 3:
+            raise FileChangedError('文件类型或大小超出允许范围')
+        if info.st_size != expected[0]:
+            raise FileChangedError('文件大小与入队时不一致')
+        if str(info.st_mtime_ns) != expected[1]:
+            raise FileChangedError('文件修改时间与入队时不一致')
         return str(real), (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
     except (OSError, TypeError) as exc:
         raise FileChangedError('文件已无法读取') from exc

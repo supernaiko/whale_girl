@@ -29,6 +29,13 @@ async function careForChat(runtime, chatId) {
       }
     }
   }
+  // 对方刚说了要去睡 / 我已经主动过一轮还没回，就先别开口。
+  const lastLine = recent.length ? recent[recent.length - 1] : '';
+  const lastIsMe = lastLine.startsWith((personaCfg.name || '我') + '：');
+  const saidGoodNight = /(去睡了|先睡了|睡了|晚安|困了|不聊了|眯一会儿)/.test(lastLine);
+  if (lastIsMe || saidGoodNight) {
+    return { ok: true, text: '', skip: lastIsMe ? 'no_reply_yet' : 'said_goodnight', mock: false, hour };
+  }
   if (runtime.llm.isMock) {
     return { ok: true, text: care.pickTemplate(), mock: true, hour };
   }

@@ -191,6 +191,25 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // app.js 构造 Bot 时会显式传进来；测试里直接 new Bot 时用这个默认值。
 const VERSION = require('../../package.json').version;
 
+// 按刚说出口的话挑表情：宁可不发，也别在「怎么发 emoji」后面跟一个哭脸。
+const EMOJI_TONES = [
+  { re: /(骂|气死|烦死|无语|离谱|过分)/, list: ['😤', '🙄'] },
+  { re: /(累|困|熬夜|加班|撑不住)/, list: ['🥱', '😮‍💨'] },
+  { re: /(好吃|吃饭|饿|夜宵|奶茶|火锅)/, list: ['🍚', '🍜'] },
+  { re: /(可爱|猫|软乎乎|抱抱|蹭)/, list: ['🥺', '😳'] },
+  { re: /(哈哈|笑死|好耶|开心|太棒|舒服)/, list: ['😄', '😆', '✨'] },
+  { re: /(难过|想哭|委屈|算了)/, list: ['🥲', '😞'] },
+];
+
+function emojiTone(text, rng) {
+  const s = String(text || '');
+  if (!s || /[?？]\s*$/.test(s)) return ''; // 问句后面不加表情
+  for (const tone of EMOJI_TONES) {
+    if (tone.re.test(s)) return tone.list[Math.floor(rng() * tone.list.length)];
+  }
+  return '';
+}
+
 class Bot {
   constructor({ config, store, llm, logger, trace = null, now = () => new Date(), rng = Math.random, mockChunkDelayMs = 12, linkReader = null, calibration = null, moments = null, version = VERSION }) {
     this.config = config;
@@ -1979,10 +1998,10 @@ class Bot {
     const chance = persona.emojiChanceFor(this.config);
     let extra = decision.diaryExpanded ? '' : (foundEmoji || '');
     if (!decision.diaryExpanded && !error && decision.action === 'reply' && !extra && chance > 0 && this.rng() <= chance) {
-      // 颜文字和 emoji 各一半，这样「颜文字用量」调高后真的能看到颜文字
-      extra = this.rng() < 0.5
-        ? persona.kaomojiPick(this.rng)
-        : ['🐋', '🥺', '😭', '✨', '💧', '🫧', '🍚'][Math.floor(this.rng() * 7)];
+      // 表情跟着这几句的情绪走：对不上就干脆不发，别硬塞一个和话题无关的脸。
+      const spoken = bubbles.join(' ');
+      const tone = emojiTone(spoken, this.rng);
+      extra = tone || (this.rng() < 0.5 ? persona.kaomojiPick(this.rng) : '');
     }
     // 表情在正文截断后追加，必须连同合并时的空格一起占用整轮字数。
     const extraChars = Array.from(extra).length + (bubbles.length >= maxBubbles ? 1 : 0);

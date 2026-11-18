@@ -33,7 +33,8 @@ class StickerMixin:
                 try:
                     compat = self._compat_mod()
                     if self.ACCOUNT.get('verified') and int(self.ACCOUNT.get('hwnd') or 0) == entry['hwnd'] and (compat is not None) and (int(compat.pinned_window() or 0) == entry['hwnd']) and self.wechat_window_alive():
-                        value = G.quarantined_input_value(self.gui, entry['hwnd'], entry['aliases'])
+                        value = G.quarantined_input_value(self.gui, entry['hwnd'], entry['aliases'],
+                                                          file_mode=entry.get('file_mode', False))
                 except Exception:
                     pass
                 if isinstance(value, str) and (not G.sticker_input_is_blank(value)):
