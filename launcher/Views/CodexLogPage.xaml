@@ -14,7 +14,10 @@
                 <Button Content="刷新" Padding="14,5" Click="OnRefresh" />
                 <CheckBox x:Name="Follow" Content="自动跟随最新一次运行" IsChecked="True"
                           VerticalAlignment="Center" Margin="14,0,0,0" />
+                <CheckBox x:Name="Raw" Content="显示原始日志" Click="OnRawChanged"
+                          VerticalAlignment="Center" Margin="14,0,0,0" />
                 <CheckBox x:Name="Wrap" Content="自动换行" IsChecked="True"
+                          IsEnabled="{Binding IsChecked, ElementName=Raw}"
                           VerticalAlignment="Center" Margin="14,0,0,0" Click="OnWrapChanged" />
             </StackPanel>
         </StackPanel>
@@ -31,11 +34,67 @@
             </Border>
 
             <Border Grid.Column="1" Style="{StaticResource Card}" Padding="12" Margin="12,0,0,0">
-                <ScrollViewer x:Name="Scroller" VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Auto">
-                    <TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12"
-                               TextWrapping="Wrap" LineHeight="18" />
-                </ScrollViewer>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <StackPanel x:Name="Summary" Visibility="Collapsed" Margin="0,0,0,10">
+                        <TextBlock x:Name="TaskText" Foreground="{DynamicResource Text}" FontWeight="SemiBold"
+                                   TextWrapping="Wrap" TextTrimming="CharacterEllipsis" MaxHeight="72"
+                                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                        <TextBlock x:Name="CwdText" Style="{StaticResource Small}" TextWrapping="Wrap"
+                                   TextTrimming="CharacterEllipsis" MaxHeight="34"
+                                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+                        <TextBlock x:Name="RunStats" Foreground="{DynamicResource Text2}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0" />
+                    </StackPanel>
+
+                    <ScrollViewer x:Name="StepScroller" Grid.Row="1" Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl x:Name="Steps">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Expander Header="{Binding Title}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
+                                              Foreground="{DynamicResource Text}" Margin="0,0,0,4">
+                                        <Expander.HeaderTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding}" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </DataTemplate>
+                                        </Expander.HeaderTemplate>
+                                        <TextBlock Text="{Binding Detail}" Foreground="{DynamicResource Text2}"
+                                                   TextWrapping="Wrap" Margin="22,4,8,7" />
+                                        <Expander.Style>
+                                            <Style TargetType="Expander">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Detail}" Value="">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="Expander">
+                                                                    <ContentPresenter ContentSource="Header" Margin="22,3,0,3" />
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Expander.Style>
+                                    </Expander>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <ScrollViewer x:Name="RawScroller" Grid.Row="1" Visibility="Collapsed"
+                                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="LogText" FontFamily="Consolas" FontSize="12"
+                                   Foreground="{DynamicResource Text}" TextWrapping="Wrap" LineHeight="18" />
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="StatusText" Grid.Row="1" Style="{StaticResource Small}" TextWrapping="Wrap" />
+                </Grid>
             </Border>
         </Grid>
     </Grid>
