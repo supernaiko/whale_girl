@@ -66,6 +66,20 @@ namespace WhaleLauncher.Views
             }
         }
 
+        async Task LoadLogAsync()
+        {
+            try
+            {
+                var res = await Api.Get(sup.Url, "/api/moments/pics/log", 15);
+                if (res == null || !res.Bool("ok")) return;
+                var sb = new System.Text.StringBuilder();
+                foreach (var one in res.Prop("lines").EnumerateArray()) sb.AppendLine(one.GetString());
+                LogBox.Text = sb.ToString();
+                LogBox.ScrollToEnd();
+            }
+            catch { /* ignore */ }
+        }
+
         void Apply(ApiResult res)
         {
             dir = res.Str("dir");
@@ -89,6 +103,7 @@ namespace WhaleLauncher.Views
             }
             ChkNoPerson.IsChecked = res.Bool("preferNoPerson");
             ChkRepeat.IsChecked = res.Bool("allowRepeat");
+            _ = LoadLogAsync();
 
             var items = new List<PicItem>();
             if (res.Has("images") && res.Prop("images").ValueKind == JsonValueKind.Array)
@@ -206,6 +221,20 @@ namespace WhaleLauncher.Views
         string Source()
         {
             return CmbSource.SelectedItem is ComboBoxItem item ? Convert.ToString(item.Tag) ?? "weibo" : "weibo";
+        }
+
+        async void OnRefreshLog(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var res = await Api.Get(sup.Url, "/api/moments/pics/log", 15);
+                if (res == null || !res.Bool("ok")) { LogBox.Text = "读不到日志"; return; }
+                var sb = new System.Text.StringBuilder();
+                foreach (var one in res.Prop("lines").EnumerateArray()) sb.AppendLine(one.GetString());
+                LogBox.Text = sb.Length == 0 ? "（暂无朋友圈日志）" : sb.ToString();
+                LogBox.ScrollToEnd();
+            }
+            catch (Exception ex) { LogBox.Text = "出错：" + ex.Message; }
         }
 
         async void OnSave(object sender, RoutedEventArgs e)

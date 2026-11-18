@@ -109,6 +109,18 @@
             </StackPanel>
         </Border>
 
+        <Border Grid.Row="4" Style="{StaticResource Card}" Margin="0,12,0,0">
+            <StackPanel>
+                <DockPanel LastChildFill="False">
+                    <TextBlock DockPanel.Dock="Left" Text="最近的朋友圈日志" Style="{StaticResource Label}" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Content="刷新" Style="{StaticResource Ghost}" Click="OnRefreshLog" />
+                </DockPanel>
+                <TextBox x:Name="LogBox" Margin="0,8,0,0" MinHeight="140" MaxHeight="240" TextWrapping="NoWrap"
+                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                         IsReadOnly="True" AcceptsReturn="True" FontFamily="Consolas" FontSize="12" />
+            </StackPanel>
+        </Border>
+
         <Border Grid.Row="3" Style="{StaticResource Card}" Margin="0,12,0,0">
             <StackPanel>
                 <DockPanel LastChildFill="False">
