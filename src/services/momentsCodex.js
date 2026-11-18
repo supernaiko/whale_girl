@@ -127,7 +127,7 @@ function choose(input = {}) {
  * 用于「固定人物 + 每天场景」的出图：人物长相由角色卡固定，场景由文案决定。
  * 成功返回 { file, ms, raw }，失败返回 null。
  */
-function generateImage({ scene, character, outFile, timeoutMs }) {
+function generateImage({ scene, character, outFile, timeoutMs, frontView = false, reference = '' }) {
   return new Promise((resolve) => {
     if (!available() || !outFile) return resolve(null);
     const dir = path.dirname(outFile);
@@ -146,6 +146,7 @@ function generateImage({ scene, character, outFile, timeoutMs }) {
       '用你的图像生成工具画一张照片，并保存到：' + outFile,
       '（必须真的生成图片文件，不要画 SVG，不要复制别的图片。）',
       '',
+      reference ? ('参考图里的人就是主角（第 1 张），脸型、五官、发型、发夹、身材都照着她画，只换场景和衣服。') : '',
       '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who,
       optional ? ('细节（不是每张都要出现）：' + optional) : '',
       outfit ? ('这次穿：' + outfit + '（换别的日子可以换别的衣服，但人不变）') : '',
@@ -155,15 +156,19 @@ function generateImage({ scene, character, outFile, timeoutMs }) {
       '风格：' + style,
       '要求：',
       '1) 竖构图或方构图都可以，像手机相册里的照片；',
-      '2) 不要正脸大特写，最好背影、侧脸、低头、只露半张脸，或干脆只拍手、脚、桌面局部；',
+      frontView
+        ? '2) 可以有正脸，自然一点的日常表情（可以笑），但不要怼脸大特写、不要摆拍看镜头；'
+        : '2) 不要正脸大特写，最好背影、侧脸、低头、只露半张脸，或干脆只拍手、脚、桌面局部；',
       '3) 不要出现第二个人，不要网红脸，不要浓妆，不要文字、logo、水印、边框；',
       '4) 画面要能对上这个场景，让人一看就知道在做什么。',
       '完成后只回复一句话：已保存。'
     ].join('\n');
     const started = Date.now();
     let raw = '';
+    const extra = [];
+    if (reference && fs.existsSync(reference)) extra.push('-i', reference);
     const child = spawn(process.execPath, [
-      codexEntry(), 'exec', '-C', dir,
+      codexEntry(), 'exec', '-C', dir, ...extra,
       '-c', 'model_reasoning_effort="low"',
       '--skip-git-repo-check',
       '--dangerously-bypass-approvals-and-sandbox',

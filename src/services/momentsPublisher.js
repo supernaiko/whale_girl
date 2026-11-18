@@ -554,7 +554,9 @@ class MomentsPublisher {
       const character = this.characterCard();
       const dir = path.join(this.root, 'data', 'moments', 'paint');
       const file = path.join(dir, 'paint-' + Date.now() + '.png');
-      const got = await momentsCodex.generateImage({ scene: sceneText, character, outFile: file });
+      let reference = '';
+      try { reference = (this.selfImages() || [])[0] || ''; } catch { /* ignore */ }
+      const got = await momentsCodex.generateImage({ scene: sceneText, character, outFile: file, reference });
       if (got && got.file) { this.logger?.info?.('[moments] paint ok ms=' + got.ms); return got.file; }
     } catch (error) { this.logger?.warn?.('[moments] paint error: ' + error.message); }
     return '';
