@@ -71,12 +71,30 @@ public static class BreezeSpeech
     // 走代理 6 分钟没回来，直连 41 秒拿到 wav。语音接口是国内服务，不需要代理。
     // HTTP/1.1 连 api.breeze.blue 建连就失败（20 秒 ConnectTimeout）；实测 HTTP/2 能过：
     // 直连 12.9 秒拿到 153KB wav，走本地代理 2.7 秒。所以强制 HTTP/2，并绕开 Clash（国内接口）。
-    static HttpClient Client() => new(new HttpClientHandler { AllowAutoRedirect = false, UseProxy = false })
+    static bool? proxyOk;
+    static bool ProxyAvailable()
     {
-        Timeout = TimeSpan.FromSeconds(90),
-        DefaultRequestVersion = System.Net.HttpVersion.Version20,
-        DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower,
-    };
+        if (proxyOk.HasValue) return proxyOk.Value;
+        try
+        {
+            using var tcp = new System.Net.Sockets.TcpClient();
+            proxyOk = tcp.ConnectAsync("127.0.0.1", 10808).Wait(300) && tcp.Connected;
+        }
+        catch { proxyOk = false; }
+        return proxyOk.Value;
+    }
+
+    static HttpClient Client()
+    {
+        var handler = new HttpClientHandler { AllowAutoRedirect = false, UseProxy = ProxyAvailable() };
+        if (handler.UseProxy) handler.Proxy = new System.Net.WebProxy("http://127.0.0.1:10808", false);
+        return new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(90),
+            DefaultRequestVersion = System.Net.HttpVersion.Version20,
+            DefaultVersionPolicy = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower,
+        };
+    }
 
     public sealed record KeyCheck(bool Available, string Message);
 
