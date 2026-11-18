@@ -20,6 +20,7 @@ const STOCK_HOSTS = /(^|\.)(nipic|nximg|58pic|zcool|veer|shutterstock|dreamstime
 // 只收微博图床的原图：知乎/豆瓣/什么值得买这些站的图常被压上站名水印，发朋友圈一眼假，直接不要。
 const CLEAN_HOSTS = /(^|\.)(sinaimg\.cn|weibocdn\.com|sina\.com\.cn)$/i;
 const BUDGET_MS = 20000;
+const ILLUST_TITLE = /插画|二次元|动漫|漫画|壁纸|头像|表情包|手绘|同人|Q版|画师|原画|线稿|立绘|壁纸图|卡通|动画/i;
 const STOCK_TITLE = /昵图|摄图|千库|包图|素材|模板|矢量|水印|图库|汇图|六图|摄影图|高清图|图片下载|正版图|商用图|png格式|psd|ai格式|海报|banner/i;
 
 function jpegSize(buf) {
@@ -128,7 +129,7 @@ async function baiduSearch(query, fetchImpl = fetch, ms = 6000) {
     const link = item && (item.middleURL || item.thumbURL);
     if (!link || !/^https?:\/\/[^/]*baidu\.com\//.test(link)) continue;
     const title = String(item.fromPageTitleEnc || item.fromPageTitle || '');
-    if (STOCK_TITLE.test(title)) continue;
+    if (STOCK_TITLE.test(title) || ILLUST_TITLE.test(title)) continue;
     const hits = tokens.filter(t => title.includes(t)).length;
     if (tokens.length && hits === 0) continue;
     scored.push({ link, title, hits, bonus: 0 });
@@ -157,7 +158,7 @@ function bingCandidates(html) {
     const url = String(item.murl || '');
     if (!/\.(jpe?g|png)(\?|$)/i.test(url) || found.some(x => x.url === url)) continue;
     const title = String(item.t || item.desc || '');
-    if (STOCK_TITLE.test(title)) continue;
+    if (STOCK_TITLE.test(title) || ILLUST_TITLE.test(title)) continue;
     let host = '';
     try { host = new URL(url).hostname; } catch { continue; }
     if (STOCK_HOSTS.test(host)) continue;
