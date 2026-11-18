@@ -5,6 +5,22 @@ import engine as G
 
 class StickerMixin:
 
+    def open_attachment_chat(self, uia, shown, aliases):
+        if G.sticker_alias_match(uia.current_chat(), aliases):
+            return True
+        uia.open_chat([shown] + [alias for alias in aliases if alias != shown])
+        for _ in range(8):
+            G.time.sleep(0.25)
+            if G.sticker_alias_match(uia.current_chat(), aliases):
+                return True
+        return False
+
+    def attachment_account_valid(self, hwnd):
+        compat = self._compat_mod()
+        return bool(self.ACCOUNT.get('verified') and int(self.ACCOUNT.get('hwnd') or 0) == hwnd
+                    and self.sticker_account_evidence_allowed() and self.wechat_window_alive()
+                    and compat is not None and int(compat.pinned_window() or 0) == hwnd)
+
     def sticker_quarantine_allows(self, username, shown='', gui_locked=False):
         requested = str(username or '').strip()
         matches = [(key, entry) for key, entry in self.sticker_draft_quarantine.items() if key == requested or (not requested and (str(shown or '').strip() == key or str(shown or '').strip() in entry['aliases']))]
@@ -122,17 +138,11 @@ class StickerMixin:
                             uia = current_gui._get_uia()
                         if uia is None:
                             return G.sticker_result('failed', 'UIA target proof is unavailable; no OCR fallback')
-                        search_keys = [chat_display_name] + [a for a in aliases if a and a != chat_display_name]
                         try:
-                            if not G.sticker_alias_match(uia.current_chat(), aliases):
-                                uia.open_chat(search_keys)
-                                for _ in range(8):
-                                    G.time.sleep(0.25)
-                                    if G.sticker_alias_match(uia.current_chat(), aliases):
-                                        break
+                            target_open = self.open_attachment_chat(uia, chat_display_name, aliases)
                         except Exception:
                             return G.sticker_result('failed', 'exact target is not open in the pinned window')
-                        if not G.sticker_alias_match(uia.current_chat(), aliases):
+                        if not target_open:
                             return G.sticker_result('failed', 'exact target is not open in the pinned window')
                         current = self.sticker_config_now()
                         if current is None:
@@ -142,8 +152,7 @@ class StickerMixin:
 
                         def pinned_account_valid():
                             try:
-                                compat = self._compat_mod()
-                                return bool(self.ACCOUNT.get('verified') and int(self.ACCOUNT.get('hwnd') or 0) == hwnd and self.sticker_account_evidence_allowed() and self.wechat_window_alive() and (compat is not None) and (int(compat.pinned_window() or 0) == hwnd))
+                                return self.attachment_account_valid(hwnd)
                             except Exception:
                                 return False
 

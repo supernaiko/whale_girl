@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 
 'use strict';
@@ -23,6 +23,7 @@ fs.writeFileSync(path.join(tmp, 'a.txt'), '你好，这是测试文件。\n第�
 fs.writeFileSync(path.join(tmp, '子目录', 'x.md'), '# 标题', 'utf8');
 fs.writeFileSync(path.join(tmp, 'b.bin'), Buffer.from([0, 1, 2, 3, 0, 5]));
 fs.writeFileSync(path.join(tmp, '报告-2026.md'), '报告正文', 'utf8');
+fs.writeFileSync(path.join(tmp, '季度 简报.pdf'), '文件路径测试', 'utf8');
 
 // 外部目录，用于验证越界拒绝
 const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-ops-outside-'));
@@ -40,7 +41,7 @@ function settings(overrides = {}) {
   });
 }
 
-function ctx(text, { senderId = OWNER, state, chatType = 'private', chatId = 'wxid_owner_test', overrides = {}, model } = {}) {
+function ctx(text, { senderId = OWNER, state, chatType = 'private', chatId = 'wxid_owner_test', overrides = {}, model, api } = {}) {
   const sent = [];
   return {
     message: { platform: 'wechat', chatId, chatType, senderId, text, atMe: true },
@@ -49,6 +50,7 @@ function ctx(text, { senderId = OWNER, state, chatType = 'private', chatId = 'wx
     whale: {
       sendText: async (to, body) => { sent.push({ to, body }); return { id: 'm1' }; },
       model,
+      api,
       paths: { pluginData: path.join(tmp, '.pluginData'), appData: tmp, appRoot: path.resolve(__dirname, '..') },
     },
     sent,
@@ -178,28 +180,53 @@ test('找文件名', async () => {
   assert.match(out, /报告-2026\.md/);
 });
 
-// ---- 写操作：确认流程 ----
+// ---- 写操作：主人说了就做，不再二次确认 ----
 
-test('打开白名单外软件：先要求确认，确认后被拒', async () => {
+test('两种文件指令直接提交，回报本机结果', async () => {
+  const file = fs.realpathSync(path.join(tmp, '季度 简报.pdf'));
+  const examples = [`把 ${file} 发给 文件传输助手`, `助手 发文件 “${file}” 给 测试群`];
+  for (const [index, command] of examples.entries()) {
+    const target = index === 0 ? '文件传输助手' : '测试群';
+    const calls = [];
+    const api = async (url, options) => {
+      calls.push({ url, options });
+      return options ? { status: 202, ok: true, body: { ok: true, jobId: 'job-a' } }
+        : { status: 200, ok: true, body: { ok: true, status: 'submitted' } };
+    };
+    assert.equal((await pre(command)).action, 'wake');
+    const first = await gen(command, { api });
+    assert.match(first.output.text, /本机微信已记录/);
+    assert.equal(first.output.state.pending, undefined);
+    assert.deepEqual(calls, [
+      { url: '/api/send-file', options: { method: 'POST', body: { chat: target, path: file } } },
+      { url: '/api/send-file/status?id=job-a', options: undefined },
+    ]);
+  }
+});
+
+test('文件命令拒绝越界、目录和相对路径，全程不调 API', async () => {
+  let calls = 0;
+  const api = async () => { calls++; };
+  for (const [input, expected] of [[path.join(outside, 'secret.txt'), /白名单/], [tmp, /普通文件/], ['a.txt', /绝对路径/]]) {
+    const result = await gen(`发文件 "${input}" 给 文件传输助手`, { api });
+    assert.match(result.output.text, expected);
+    assert.equal(result.output.state.pending, undefined);
+  }
+  assert.equal(calls, 0);
+});
+
+test('打开白名单外软件：直接拒绝，不留待确认', async () => {
   const first = await gen('助手 打开 微信');
-  assert.match(first.output.text, /回「确认」/);
-  const state = first.output.state;
-  const second = await gen('助手 确认', { state });
-  assert.match(second.output.text, /不在软件白名单里/);
+  assert.match(first.output.text, /不在软件白名单里/);
+  assert.equal(first.output.state.pending, undefined);
 });
 
-test('待确认时取消', async () => {
-  const first = await gen('助手 打开 记事本');
-  const second = await gen('助手 取消', { state: first.output.state });
-  assert.match(second.output.text, /已取消/);
-});
-
-test('没有待确认时回「确认」不执行', async () => {
+test('没有待确认时回「确认」什么都不做', async () => {
   const out = (await gen('助手 确认')).output.text;
-  assert.match(out, /没有等你确认的操作/);
+  assert.ok(!out, '不应该回话，实际：' + out);
 });
 
-test('pre_reply 对确认词也唤醒', async () => {
+test('pre_reply 对确认词仍唤醒', async () => {
   const r = await pre('确认', { state: { pending: { kind: 'open', arg: '记事本', at: Date.now() } } });
   assert.strictEqual(r.action, 'wake');
 });
@@ -213,12 +240,10 @@ test('tool.run 返回环境 JSON', async () => {
   assert.strictEqual(data.apiKey, false);
 });
 
-test('让 DSH：先回执要求确认，未确认不启动', async () => {
+test('让 DSH：直接开工，不再问确认', async () => {
   const first = await gen('助手 让 DSH 整理一下桌面');
-  assert.match(first.output.text, /回「确认」/);
-  const second = await gen('助手 确认', { state: first.output.state });
-  // 没有配置 apiKey 时，DSH 起得来但会报缺凭据（取决于本机环境），这里只要求不是“凭空成功”
-  assert.doesNotMatch(second.output.text, /^DSH 完成/);
+  assert.doesNotMatch(first.output.text, /回「确认」/);
+  assert.ok(first.output.text.length > 0);
 });
 
 // ---- 回复长度 ----
@@ -257,9 +282,9 @@ test('自然语言：找 报告', async () => {
   assert.match(out, /报告-2026\.md/);
 });
 
-test('自然语言：让 DSH 先要确认', async () => {
+test('自然语言：让 DSH 直接开工', async () => {
   const first = await gen('让 DSH 整理桌面', { overrides: NAT });
-  assert.match(first.output.text, /回「确认」/);
+  assert.doesNotMatch(first.output.text, /回「确认」/);
 });
 
 test('自然语言：状态', async () => {

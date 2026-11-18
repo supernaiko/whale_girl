@@ -41,6 +41,7 @@ function createSdk() {
     sendText: (chatId, text, options = {}) => call('send', { ...options, chatId, text, type: 'text' }),
     sendVoice: (chatId, text, options = {}) => call('send', { ...options, chatId, text, type: 'voice' }),
     sendImage: (chatId, file, options = {}) => call('send', { ...options, chatId, file, type: 'image' }),
+    sendEmoticon: (chat, code) => call('sendEmoticon', { chat, code }),
     delivery: id => call('delivery', { id }),
     paths: Object.freeze({ ...settings.paths }),
     get context() { return current.getStore()?.input || null; },

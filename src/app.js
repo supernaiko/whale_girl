@@ -34,6 +34,7 @@ const { DiaryService } = require('./services/diary');
 const { DigestService } = require('./services/digest');
 const locationProbe = require('./services/location');
 const { PluginHost } = require('./services/pluginHost');
+const { FileSendQueue } = require('./services/fileSendQueue');
 
 const VERSION = require('../package.json').version;
 
@@ -166,6 +167,7 @@ function createRuntime({ root = path.resolve(__dirname, '..'), env = process.env
   // store 用来记动作账：发了哪张、桥接确认没确认，下一轮提示词才看得见
   stickersAdapter.setProbeLogger(child('sticker'));   // 探针：让适配层也往同一份日志写
   runtime.stickerService = new StickerService(config, { store, logger: child('sticker') });
+  runtime.fileSend = new FileSendQueue(runtime);
   runtime.bot.stickerService = runtime.stickerService;
   // 联系人缓存：桥接推上来的 wxid 清单，给启动器选择器和 care 白名单用
   runtime.contacts = new ContactsCache(config, { logger: child('contacts') });

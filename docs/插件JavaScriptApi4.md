@@ -1,6 +1,10 @@
 # JavaScript 插件 API 4
 
 适用：鲸鲸 4.1.2 起的 JavaScript 插件。旧 Api 1/2 工具、Api 3 Wasm 消息插件与人设包继续支持。
+
+微信文件发送从 4.2.0 起可用。`whale.api('/api/send-file', { method: 'POST', body: { chat, path, note } })` 在本机排队，接口要求微信网关凭据与在线桥接。`chat` 是精确会话名或 ID，`path` 是不超过 1 GB 的本机绝对文件路径，`note` 是可选附言，在本机微信记录文件消息后单独发送。
+
+成功入队返回 HTTP 202 和 `{ ok: true, jobId }`。通过 `GET /api/send-file/status?id=<jobId>` 查询进度。`submitted` 表示本机微信数据库已记录匹配的出站附件，收件端的送达状态需在微信里查看。桥接无法确认结果时返回 `unconfirmed`，附件任务不会自动重发。
 此功能发布前仅供开发测试，以 GitHub Releases 实际版本为准。
 
 ## 安装、授权与更新
@@ -96,6 +100,8 @@ exports.run = async ctx => whale.capabilities(); // tool.run，也可放进 hook
   返回 `{id,status:'queued',confirmed:false}`；通过 `await whale.delivery(id)` 查询状态。
   `submitted` 表示发送通道已提交，**不表示微信已送达**；图片仅数据库确认后为 `confirmed`。
   未确认不自动重发；总开关关闭、插件停用或更新会取消尚未执行的任务。
+- `await whale.sendEmoticon(chat, code)`（需要 4.2.0 内核和 Windows 桥接）：向会话 ID 或唯一会话名发送微信内置表情，`code` 可传 `微笑` 或 `[微笑]`。返回 `{ok,status,reason}`。只有本地微信数据库出现与代码一致的新出站记录才返回 `confirmed`。超时或缺少确认时返回 `unconfirmed`，客户端不自动重发。
+  同机程序也可向内核 `POST /api/send-emoticon` 提交 `{chat,code}`，请求头传 `x-bot-token`。内核转发到桥接已有的本机端口 `POST /send_emoticon`，两个接口都等候同一发送结果。
 - `whale.paths`：`pluginData/appData/appRoot`；`whale.context` 获取当前调用上下文。
 
 这些发送便利方法继续走既有账号校验和会话保护，不能用于绕过草稿保护。

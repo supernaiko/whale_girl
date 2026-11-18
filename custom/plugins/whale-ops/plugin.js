@@ -14,7 +14,7 @@
  *   - owners：只有这些 wxid 能用；留空 = 谁都不能用
  *   - roots：只能读写这些目录，realpath 之后必须仍在里面
  *   - apps：只能启动这些名字，不接受任意路径
- *   - 打开软件、让 DSH 干活属于“写操作”，必须回「确认」才执行
+ *   - 发送文件、打开软件和让 DSH 干活必须回「确认」才执行
  *   - DSH 以 workspace-write 权限跑在指定工作目录，审批策略 never，超时杀进程树
  *
  * 日志只记动作、路径、耗时，不记聊天正文。
@@ -155,14 +155,77 @@ function stripPrefix(text, prefix) {
 /* 自然语言触发：把「帮我看看 D:\报告」「打开记事本」这类型话归一成内部命令。
    拿不准就返回 null（= pass），绝不硬抢正常聊天。 */
 const FILLER = /^(?:帮我|帮忙|麻烦你?|请|你|能不能|可以|给我|替我)\s*/;
+
+function emoticonCommand(settings, raw) {
+  const text = String(raw || '').trim();
+  const body = (stripPrefix(text, settings.prefix) ?? text).replace(FILLER, '');
+  const match = /^(?:发|来)\s*(?:一?个\s*)?(?:\[([A-Za-z0-9\u3400-\u9fff]{1,20})\](?:\s*表情)?|([A-Za-z0-9\u3400-\u9fff]{1,20}?)\s*(?:内置)?表情|(微笑|捂脸|旺柴))\s*(?:吧|呗|呀)?[。！!]*$/.exec(body);
+  const name = match && (match[1] || match[2] || match[3]);
+  return name && name !== '表情包' && name !== '表情' ? '[' + name + ']' : null;
+}
+
+const EMOTICON_FAILURES = {
+  not_converted: '当前微信没有把这个代码识别为内置表情。',
+  draft_not_empty: '输入框里有草稿，请先处理草稿。',
+  draft_unverified: '无法核对粘贴结果，请检查微信输入框。',
+  send_blocked: '当前发言范围或微信状态不允许发送。',
+  bridge_busy: '微信桥接正忙。',
+  target_unavailable: '微信桥接无法核对当前会话或发送账号。',
+  foreground_unavailable: '微信窗口无法切到前台。',
+  focus_unavailable: '微信输入框无法获得焦点。',
+  clipboard_unavailable: '剪贴板被占用或当前格式无法安全暂存。',
+  bridge_unavailable: '微信桥接未连接。',
+  bridge_auth_failed: '微信桥接身份校验失败。',
+  invalid_chat: '当前会话标识无效。',
+  invalid_code: '表情代码无效。',
+};
+
+async function sendEmoticon(whale, chat, code) {
+  if (typeof whale?.sendEmoticon !== 'function') return '内置表情发送需要鲸鲸 4.2.0 或更新的内核和桥接。';
+  let result;
+  try {
+    result = await whale.sendEmoticon(chat, code);
+  } catch {
+    return '内置表情发送结果未确认，请检查微信聊天记录。';
+  }
+  if (result?.ok === true && result.status === 'confirmed') return '';
+  if (result?.status === 'unconfirmed') return '内置表情发送结果未确认，请检查微信聊天记录。';
+  return '内置表情发送失败。' + (EMOTICON_FAILURES[result?.reason] || '请检查微信桥接。');
+}
+
 const PATH_RE = /[A-Za-z]:\\[^"“”'‘’\s，。；;、）)]*/;
 const TARGET_RE = /(文件|文件夹|目录|磁盘|桌面|下载|文档|软件|程序|应用|记事本|计算器|资源管理器|命令|脚本|代码|表格|文本|图片|日志|清单|列表|dsh|电脑)/i;
 const APP_TAIL = /^[\w\u4e00-\u9fa5.\- ]{1,16}$/;
 const FILE_RE = /\.(txt|md|json|js|py|log|csv|yml|yaml|ini|html|css|ts|xml)$/i;
 
+function parseFileSend(text) {
+  const explicit = text.startsWith('发文件');
+  if (!explicit && !text.startsWith('把')) return null;
+  const word = explicit ? '给' : '发给';
+  const rest = text.slice(explicit ? 3 : 1).trimStart();
+  const quote = rest[0] === '“' ? '”' : rest[0] === '"' ? '"' : '';
+  let input;
+  let destination;
+  if (quote) {
+    const closing = rest.indexOf(quote, 1);
+    if (closing < 0) return null;
+    input = rest.slice(1, closing);
+    destination = rest.slice(closing + 1).trimStart();
+    if (!destination.startsWith(word)) return null;
+  } else {
+    const split = explicit ? rest.search(/\s给/) + 1 : rest.indexOf(word);
+    if (split <= 0) return null;
+    input = rest.slice(0, split);
+    destination = rest.slice(split);
+  }
+  const chat = destination.slice(word.length).trim().replace(/[。！!]$/, '').trim();
+  return { path: input.trim(), chat };
+}
+
 function natural(raw) {
   const t = String(raw || '').replace(FILLER, '').replace(/^(那|那就|好|嗯|行)[，,\s]*/, '').replace(/[。！!？?]+$/, '').trim();
   if (!t) return null;
+  if (parseFileSend(t) || /^发文件(?:\s|$)/.test(t)) return t;
   if (/^(?:电脑|助手|插件)?状态$/.test(t)) return '状态';
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
   // 疑问句/讨价还价（「看看能不能…」「怎么…」）一律不接，交给鲸鲸
@@ -262,6 +325,22 @@ async function resolveSafe(settings, input) {
     return real;
   } catch {
     return null;
+  }
+}
+
+async function fileForSend(settings, input) {
+  if (!path.isAbsolute(input) || (process.platform === 'win32' && path.parse(input).root.length < 3)) {
+    return { error: '请提供文件的绝对路径。' };
+  }
+  const file = await resolveSafe(settings, input);
+  if (!file) return { error: '文件不存在，或路径不在电脑助手的白名单内。' };
+  try {
+    const info = await fsp.stat(file);
+    if (!info.isFile()) return { error: '请选择一个普通文件。' };
+    if (info.size > 1024 ** 3) return { error: '文件大小不能超过 1 GB。' };
+    return { file, fingerprint: [info.dev, info.ino, info.size, info.mtimeMs, info.ctimeMs].join('/') };
+  } catch {
+    return { error: '无法读取文件，请重新检查路径。' };
   }
 }
 
@@ -871,7 +950,9 @@ function helpText(settings) {
   return [
     '我是电脑助手，直接说人话，我自己判断要动哪里：',
     '• 看看 C:\\Users\\1\\Documents / 看看桌面 —— 列目录',
+    '• 发一个[微笑] / 发个捂脸 —— 在当前微信会话发送内置表情',
     '• 读 D:\\报告\\a.md —— 读文本文件',
+    '• 发文件 D:\\报告\\a.pdf 给 文件传输助手',
     '• 找 报告 —— 按文件名搜（可加目录）',
     '• 在桌面随便建个 md —— 新建文件，建完回你路径',
     '• 在桌面建个 xlsx，随便写点数据 —— 本地直接生成 Excel（不用 DSH）',
@@ -913,7 +994,10 @@ async function dispatch(ctx, settings, state) {
   if (body === null) return { text: '' };
 
   if (isConfirmWord(body)) {
-    if (!state.pending) return { text: '现在没有等你确认的操作。' };
+    if (!state.pending) return { text: '' };
+    if (state.pending.kind === 'send-file' && state.pending.senderId !== message.senderId) {
+      return { text: '请由发起文件任务的人确认或取消。', state };
+    }
     if (/^(取消|算了)/.test(body.trim())) {
       state.pending = null;
       return { text: '已取消。' };
@@ -923,6 +1007,19 @@ async function dispatch(ctx, settings, state) {
     if (Date.now() - pending.at > CONFIRM_TTL) return { text: '这个确认过期了，重新发一次吧。' };
     return runConfirmed(ctx, settings, chatId, pending);
   }
+
+  const fileSend = parseFileSend(body);
+  if (fileSend) {
+    if (message.platform !== 'wechat') return { text: '请在微信会话里发起文件发送。' };
+    if (!fileSend.chat || fileSend.chat.length > 160 || /[\x00-\x1f]/.test(fileSend.chat)) {
+      return { text: '请提供有效的目标会话名称或 ID。' };
+    }
+    const checked = await fileForSend(settings, fileSend.path);
+    if (checked.error) return { text: checked.error };
+    return runConfirmed(ctx, settings, chatId, { kind: 'send-file', label: '发文件给「' + fileSend.chat + '」',
+      at: Date.now(), file: checked.file, fingerprint: checked.fingerprint, target: fileSend.chat, senderId: message.senderId });
+  }
+  if (/^发文件(?:\s|$)/.test(body)) return { text: '这样说：发文件 D:\\报告\\a.pdf 给 文件传输助手。' };
 
   const match = body.match(COMMAND);
   if (!match) return { text: '没听懂。发「帮助」看看能做什么。' };
@@ -937,10 +1034,7 @@ async function dispatch(ctx, settings, state) {
     if (verb === '读') return { text: await readFile(settings, arg) };
     if (verb === '找') return { text: await findFiles(settings, arg) };
 
-    if (verb === '打开') {
-      state.pending = { kind: 'open', label: '打开「' + arg + '」', arg, at: Date.now() };
-      return { text: '要启动「' + arg + '」。回「确认」执行，5 分钟内有效。', state };
-    }
+    if (verb === '打开') return runConfirmed(ctx, settings, chatId, { kind: 'open', arg, at: Date.now() });
 
     if (verb === '新建') {
       const parsed = parseCreateArg(arg);
@@ -960,14 +1054,12 @@ async function dispatch(ctx, settings, state) {
         return { text: 'Codex 最近一次日志（' + path.basename(last.file) + '）：\n' + clip(tail, 1200) };
       }
       if (!parsed.task) return { text: '要让 Codex 做什么？这样说：用 codex 在桌面建个 md' };
-      state.pending = { kind: 'codex', label: '用 Codex：' + clip(parsed.task, 80), task: parsed.task, cwd: parsed.cwd, at: Date.now() };
-      return { text: '要让 Codex 在 ' + parsed.cwd + ' 干活：\n' + clip(parsed.task, 300) + '\n回「确认」开始，5 分钟内有效。', state };
+      return runConfirmed(ctx, settings, chatId, { kind: 'codex', task: parsed.task, cwd: parsed.cwd, at: Date.now() });
     }
 
     if (verb === '让dsh' || verb === 'dsh') {
       const parsed = splitWorkspace(arg, settings);
-      state.pending = { kind: 'dsh', label: '让 DSH：' + clip(parsed.task, 80), task: parsed.task, cwd: parsed.cwd, at: Date.now() };
-      return { text: '要让 DSH 在 ' + parsed.cwd + ' 干活：\n' + clip(parsed.task, 300) + '\n回「确认」开始，5 分钟内有效。', state };
+      return runConfirmed(ctx, settings, chatId, { kind: 'dsh', task: parsed.task, cwd: parsed.cwd, at: Date.now() });
     }
   } catch (error) {
     return { text: '出错了：' + clip(error.message, 200) };
@@ -988,6 +1080,38 @@ function splitWorkspace(arg, settings) {
 
 async function runConfirmed(ctx, settings, chatId, pending) {
   const whale = ctx.whale;
+  if (pending.kind === 'send-file') {
+    if (ctx.message?.platform !== 'wechat') return { text: '请在微信会话里确认文件发送。' };
+    const checked = await fileForSend(settings, pending.file);
+    if (checked.error) return { text: checked.error };
+    if (checked.file !== pending.file || checked.fingerprint !== pending.fingerprint) {
+      return { text: '文件在确认前已变化，请重新发起发送。' };
+    }
+    let result;
+    try {
+      result = await whale.api('/api/send-file', { method: 'POST', body: { chat: pending.target, path: checked.file } });
+    } catch {
+      return { text: '未能获取文件提交结果，请先查看目标会话。' };
+    }
+    if (result.status === 404) return { text: '微信文件发送需要鲸鲸 4.2.0 的文件接口。' };
+    const jobId = result.body?.jobId;
+    if (!result.ok || result.body?.ok !== true || !jobId) {
+      return { text: '文件任务未入队。' + (result.body?.error || '') };
+    }
+    // 留出回复时间。桥接正在处理其他消息时，可用任务号查队列状态。
+    for (let attempt = 0; attempt < 15; attempt++) {
+      try {
+        const status = await whale.api('/api/send-file/status?id=' + encodeURIComponent(jobId));
+        if (!status.ok) break;
+        if (status.body?.status === 'submitted') return { text: '本机微信已记录发给「' + pending.target + '」的文件消息。' };
+        if (status.body?.error) return { text: status.body.error };
+      } catch {
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    return { text: '文件任务已入队，微信发送结果仍待确认。任务号 ' + jobId };
+  }
   if (pending.kind === 'open') {
     audit(whale, { action: 'open', arg: pending.arg, chatId });
     return { text: await openApp(settings, pending.arg) };
@@ -1177,6 +1301,7 @@ exports.hooks = {
       const message = ctx.message || {};
       if (!isOwner(settings, message.senderId) || !inScope(settings, message)) return { action: 'pass' };
       const text = String(message.text || '');
+      if (emoticonCommand(settings, text)) return { action: message.platform === 'wechat' ? 'wake' : 'pass' };
       const chatId = String(message.chatId || '');
       const body = bodyOf(settings, text);
       const state = plain(ctx.state) ? ctx.state : {};
@@ -1198,6 +1323,11 @@ exports.hooks = {
       const settings = readSettings(ctx.settings);
       const message = ctx.message || {};
       if (!isOwner(settings, message.senderId) || !inScope(settings, message)) return {};
+      const emoticon = emoticonCommand(settings, message.text);
+      if (emoticon) {
+        if (message.platform !== 'wechat') return {};
+        return { text: await sendEmoticon(ctx.whale, message.chatId, emoticon) };
+      }
       // 上一轮没送达的异步结果，借这次开口补发。
       flushPending(ctx.whale, message.chatId, message.chatType).catch(() => {});
       const state = plain(ctx.state) ? { ...ctx.state } : {};

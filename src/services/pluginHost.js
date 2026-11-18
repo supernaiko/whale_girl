@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const searchService = require('./search');
 const stickers = require('../adapters/stickers');
 const { HOOKS } = require('./javascriptPlugins');
+const { sendEmoticon } = require('./wechatEmoticon');
 
 const LIMIT = 512 * 1024;
 function fail(code, statusCode = 400) { return Object.assign(Error(code), { code, statusCode }); }
@@ -23,7 +24,7 @@ class PluginHost {
     if (!args || typeof args !== 'object' || Array.isArray(args)) throw fail('host_invalid_arguments');
     if (method === 'capabilities') return {
       api: 4, runtime: 'javascript', access: 'system.full', appVersion: r.version, hooks: HOOKS,
-      methods: ['api', 'capabilities', 'search', 'model', 'send', 'delivery'],
+      methods: ['api', 'capabilities', 'search', 'model', 'send', 'sendEmoticon', 'delivery'],
       apiRoutes: r.pluginApiRoutes || [],
       delivery: 'queued/submitted is not proof of WeChat delivery',
     };
@@ -61,6 +62,7 @@ class PluginHost {
         thinking: args.thinking, purpose: 'plugin' });
     }
     if (method === 'send') return this.send(args, flow);
+    if (method === 'sendEmoticon') return sendEmoticon(r, args, { signal, fetcher: this.fetcher });
     if (method === 'delivery') {
       const item = r.reminders.items.find(row => row.id === args.id && row.pluginId === flow.id);
       if (item) return { id: item.id, status: item.status === 'done' ? 'submitted' : item.status,

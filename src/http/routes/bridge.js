@@ -1,8 +1,28 @@
 'use strict';
 
 const { json, readBody } = require('../util');
+const { isLoopbackRequest, safeEqual } = require('../security');
+const { sendEmoticon } = require('../../services/wechatEmoticon');
 
 module.exports = function register(router) {
+  router.post('/api/send-emoticon', async (runtime, req, res) => {
+    const token = runtime.config.gateway?.wechat?.inboundToken;
+    if (!isLoopbackRequest(req) || !token || !safeEqual(req.headers['x-bot-token'], token)) {
+      return json(res, 403, { ok: false, status: 'failed', reason: 'bridge_auth_failed' });
+    }
+    const body = await readBody(req, 1024);
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    res.once('close', cancel);
+    try {
+      const result = await sendEmoticon(runtime, body, { signal: controller.signal });
+      const invalid = ['invalid_chat', 'invalid_code'].includes(result.reason);
+      if (!res.destroyed) return json(res, invalid ? 400 : 200, result);
+    } finally {
+      res.removeListener('close', cancel);
+    }
+  });
+
   // 桥接心跳：让状态接口知道「桥接在不在、UIA 通不通」。没这个，服务端只能看到
   // 「我收到了消息」，根本不知道回复有没有可能发出去。
   router.post('/api/bridge/heartbeat', async (runtime, req, res) => {

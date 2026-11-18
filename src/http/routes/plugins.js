@@ -9,7 +9,7 @@ module.exports = function register(router) {
     const service = runtime.bot.javascriptPlugins;
     if (info.pathname === '/api/plugins/capabilities' && info.method === 'GET') return json(res, 200, {
       ok: true, api: 4, enabled: service.enabled(), access: 'system.full',
-      methods: ['api', 'search', 'model', 'send', 'delivery'],
+      methods: ['api', 'search', 'model', 'send', 'sendEmoticon', 'delivery'],
       hooks: require('../../services/javascriptPlugins').HOOKS, apiRoutes: runtime.pluginApiRoutes,
     });
     if (info.pathname === '/api/plugins/status' && info.method === 'GET') return json(res, 200, {

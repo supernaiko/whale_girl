@@ -1,9 +1,64 @@
 # -*- coding: utf-8 -*-
 """Bridge runtime mixin: SenderMixin."""
 import engine as G
+from emoticon import outcome, parse_request, send_pasted_emoticon
 
 
 class SenderMixin:
+
+    def send_emoticon(self, chat, code, active=lambda: True):
+        """专用的原生表情发送通道，避免通用文本通道把代码原样发出去。"""
+        try:
+            chat, code = parse_request({'chat': chat, 'code': code})
+        except ValueError as exc:
+            return outcome('failed', str(exc))
+        try:
+            canonical, aliases = G.resolve_sticker_target(self.db, chat)
+            shown = next((alias for alias in sorted(aliases) if alias != canonical), canonical)
+        except Exception as exc:
+            G.log_warn('[emoticon] type=%s detail=resolve_target' % type(exc).__name__)
+            return outcome('failed', 'target_unavailable')
+
+        def allowed():
+            return (active() and self.send_policy_allows(canonical, shown) and active())
+
+        if not self.send_lock.acquire(timeout=2):
+            return outcome('failed', 'bridge_busy')
+        snap = None
+        try:
+            with G._SendStateScope(len(code), budget=20):
+                if not allowed() or not self.sticker_activity_allowed(canonical):
+                    return outcome('failed', 'send_blocked')
+                if not self.sticker_quarantine_allows(canonical, shown):
+                    return outcome('failed', 'draft_not_empty')
+                hwnd = int(self.ACCOUNT.get('hwnd') or 0)
+
+                def account_valid():
+                    return (self.account_send_allowed('内置表情') and self.attachment_account_valid(hwnd))
+
+                if not hwnd or not account_valid():
+                    return outcome('failed', 'target_unavailable')
+                desktop = G.WindowsDesktop()
+                if not desktop.foreground(hwnd):
+                    snap = self.snapshot_win_state()
+                    if not self.force_foreground(hwnd) or not desktop.foreground(hwnd):
+                        return outcome('failed', 'foreground_unavailable')
+                with self.gui_lock:
+                    gui = self.gui
+                    if not active() or not account_valid():
+                        return outcome('failed', 'send_blocked')
+                    if gui is None or not gui.use_window(hwnd) or int(gui.main_hwnd) != hwnd:
+                        return outcome('failed', 'target_unavailable')
+                    uia = gui._get_uia()
+                    if uia is None or not self.open_attachment_chat(uia, shown, aliases):
+                        return outcome('failed', 'target_unavailable')
+                    return send_pasted_emoticon(uia, desktop, hwnd, aliases, self.db, canonical,
+                                                code, allowed, account_valid, G.log_warn)
+        finally:
+            try:
+                self.restore_win_state(snap)
+            finally:
+                self.send_lock.release()
 
     def bg_send(self, text, chat_display_name, chat_username=''):
         """零焦点通道：用窗口消息打字 + 点发送，全程不抢前台。

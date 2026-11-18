@@ -14,6 +14,7 @@ const modules = [
   require('./care'),
   require('./chat'),
   require('./bridge'),
+  require('./sendFile'),
   require('./stickers'),
   require('./reminders'),
   require('./diary'),

@@ -6,13 +6,14 @@ from bridge_log import dump_hang_trace
 from parent_watch import start_watchdog
 from window_mixin import WindowMixin
 from sender_mixin import SenderMixin
+from file_mixin import FileSendMixin
 from sticker_mixin import StickerMixin
 from voice_mixin import VoiceMixin
 from receiver_mixin import ReceiverMixin
 from loop_mixin import LoopMixin
 
 
-class BridgeRuntime(AccountMixin, WindowMixin, SenderMixin, StickerMixin, VoiceMixin, ReceiverMixin, LoopMixin):
+class BridgeRuntime(AccountMixin, WindowMixin, SenderMixin, StickerMixin, FileSendMixin, VoiceMixin, ReceiverMixin, LoopMixin):
 
     def start(self):
         G.boot('进入 main()')
@@ -292,6 +293,8 @@ class BridgeRuntime(AccountMixin, WindowMixin, SenderMixin, StickerMixin, VoiceM
         G.log('消息调度：%d 个 worker（同一会话串行、跨会话并发；私信安静 %.0fms、群聊最多 %.0fms 后合并）'
               % (G.PIPELINE_WORKERS, G.MESSAGE_SETTLE_MS, G.GROUP_MAX_BATCH_WAIT_MS))
         G.threading.Thread(target=self.sticker_test_loop, daemon=True).start()
+        file_send_stop = G.threading.Event()
+        G.threading.Thread(target=self.file_send_loop, args=(file_send_stop,), daemon=True, name='file-send').start()
         G.threading.Thread(target=self.voice_test_loop, daemon=True, name='voice-send-test').start()
         self.listener = Listener(self.db, interval=0.4)
         self.listener.add_all(self.on_message)
@@ -346,6 +349,12 @@ class BridgeRuntime(AccountMixin, WindowMixin, SenderMixin, StickerMixin, VoiceM
             moments_reader = MomentsReader(self.db, G.LOCAL_HTTP, self.bot_url.rsplit('/webhook', 1)[0], {'x-bot-token': self.token, 'x-whale-bridge': '1'}, G.log, interact=moments_interact, publish=moments_publish).start()
         except Exception as exc:
             G.log('朋友圈读取通道未启动 type=%s' % type(exc).__name__)
+        if _lock_sock is not None:
+            try:
+                from emoticon_http import start_emoticon_http
+                start_emoticon_http(_lock_sock, self, G.log)
+            except Exception as exc:
+                G.log_warn('内置表情接口未启动 type=%s' % type(exc).__name__)
         G.log('已启动。鲸鲸地址：', self.bot_url)
         try:
             import json as _json, datetime as _dt
@@ -358,6 +367,7 @@ class BridgeRuntime(AccountMixin, WindowMixin, SenderMixin, StickerMixin, VoiceM
                 G.time.sleep(1)
         except KeyboardInterrupt:
             G.log('正在退出…')
+            file_send_stop.set()
             if moments_reader is not None:
                 moments_reader.stop()
             if G.REMINDER_RUNNER is not None:

@@ -688,7 +688,7 @@ class BridgeContractTest(unittest.TestCase):
                         _compat_mod=lambda: SimpleNamespace(pinned_window=lambda: 100),
                         ROOT=str(ROOT), os=os, db=FakeDB(), SEND_STATE={'active': False, 'start': 0},
                         time=SimpleNamespace(time=lambda: 1, sleep=lambda delay: None))
-        bridge_functions({'send_sticker'}, self.env)
+        bridge_functions({'send_sticker', 'open_attachment_chat', 'attachment_account_valid'}, self.env)
         return self.env
 
     def test_bridge_account_rejection_never_binds_or_transports(self):

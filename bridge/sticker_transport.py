@@ -29,7 +29,7 @@ def _file_marker(path):
         return None
 
 
-def _message_matches(message, marker):
+def _message_matches(message, marker, exact=False):
     """Only structured attachment evidence can strongly identify an upload.
 
     A normal text reply such as '找不到a.gif' is NOT delivery confirmation.
@@ -39,11 +39,21 @@ def _message_matches(message, marker):
         return False
     try:
         import xml.etree.ElementTree as ET
-        tree = ET.fromstring(str(message.get('content') or ''))
+        content = str(message.get('content') or '')
+        sender = str(message.get('sender_username') or '')
+        if exact and sender and content.startswith(sender + ':\n'):
+            content = content[len(sender) + 2:]
+        tree = ET.fromstring(content)
     except Exception:
         return False
     wanted_md5 = str(marker.get('md5') or '').lower()
     wanted_name = str(marker.get('name') or '')
+    if exact:
+        # Wx 数据库把文件和网页、引用放在同一类，文件卡片具体是 appmsg 类型 6。
+        app = tree.find('appmsg')
+        return bool(kind in FILE_TYPES and wanted_name and app is not None
+                    and app.findtext('type', '').strip() == '6'
+                    and app.findtext('title', '') == wanted_name)
     for node in tree.iter():
         tag = str(node.tag).lower()
         for attr, value in node.attrib.items():
@@ -265,7 +275,7 @@ def _outgoing(db, message, own_username):
 
 
 def confirm_delivery(db, username, baseline, identity, gate, timeout=5.0,
-                     clock=time.monotonic, sleep=time.sleep, marker=None):
+                     clock=time.monotonic, sleep=time.sleep, marker=None, exact=False):
     deadline = clock() + timeout
     while True:
         if not gate():
@@ -279,12 +289,12 @@ def confirm_delivery(db, username, baseline, identity, gate, timeout=5.0,
             # 现场问题：把 gif 粘进输入框后，微信有时发成「文件卡片」而不是「图片/表情」，
             # 老逻辑只认 MEDIA_TYPES，于是明明发出去了还报「未确认」。
             # 现在先用 md5 / 文件名认领，认不到再看类型。
-            strong = [m for m in fresh if _message_matches(m, marker)]
+            strong = [m for m in fresh if _message_matches(m, marker, exact=exact)]
             if len(strong) == 1:
                 return result('confirmed')
             if len(strong) > 1:
                 return result('unconfirmed', 'multiple outgoing messages match the sticker; delivery is ambiguous; do not retry')
-            candidates = [m for m in fresh if m.get('type') in MEDIA_TYPES]
+            candidates = [] if exact else [m for m in fresh if m.get('type') in MEDIA_TYPES]
             # More than one candidate is ambiguous. Never claim which image was sent.
             if len(candidates) == 1:
                 return result('confirmed')
@@ -410,7 +420,7 @@ def quarantined_input_value(gui, hwnd, aliases):
 
 def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
                  account_valid, activity_allowed, desktop=None, image_check=None,
-                 sleep=time.sleep, confirm_timeout=5.0):
+                 sleep=time.sleep, confirm_timeout=5.0, file_expected=None):
     """One paste and at most one Enter; the caller owns send_lock + gui_lock.
 
     gate must reread disk and backend generation. Returns structured evidence,
@@ -420,8 +430,19 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
     hand before any future send.
     """
     touched = False
-    attempted_enter = False
     draft_observed = False
+    file_mode = file_expected is not None
+    if file_mode:
+        try:
+            from .file_transport import validate_file, copy_file_to_clipboard, send_file_key, FileChangedError
+        except ImportError:
+            from file_transport import validate_file, copy_file_to_clipboard, send_file_key, FileChangedError
+
+    def check_path(candidate):
+        if file_mode:
+            return validate_file(candidate, file_expected)
+        return validate_path(candidate, root, image_check)
+
     try:
         if not gate():
             return result('cancelled', 'stickers are disabled or generation expired')
@@ -430,7 +451,7 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
         desktop = desktop or WindowsDesktop()
         identity = db_identity(db)
         baseline = watermark(db, username)
-        approved, fingerprint = validate_path(path, root, image_check)
+        approved, fingerprint = check_path(path)
 
         def guard(*, require_focus=True):
             # Potentially blocking HTTP/DB work precedes immediate window/title/focus reads.
@@ -504,8 +525,8 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
         else:
             return result('failed', 'input contains a draft; clear it manually before sending')
         # Validation can take time. Repeat guards before changing the clipboard/pasting.
-        if validate_path(approved, root, image_check)[1] != fingerprint:
-            return result('failed', 'sticker file changed before paste')
+        if check_path(approved)[1] != fingerprint:
+            return result('failed', 'file_changed' if file_mode else 'sticker file changed before paste')
         # 后台文字发送可能留下焦点在会话列表。只给已核验的空输入框设置一次焦点，
         # 并重新读取账号、会话、控件和真实键盘焦点，再允许粘贴。
         control = guard(require_focus=False)
@@ -522,21 +543,31 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
             return result('cancelled', 'before paste: ' + (guard_problem() or 'send gates changed'))
         if not _is_blank(desktop.value(control)):
             return result('cancelled', 'input acquired a draft before paste')
-        if not gui.copy_files_to_clipboard([approved]):
+        if file_mode:
+            copy_file_to_clipboard(approved)
+        elif not gui.copy_files_to_clipboard([approved]):
             return result('failed', 'unable to prepare attachment clipboard')
         control = guard()
         if control is None or not _is_blank(desktop.value(control)) or not desktop.clipboard_matches(approved):
             return result('cancelled', 'target/focus/switch/draft/clipboard changed before paste')
         # Mark uncertain BEFORE calling a side-effectful function (it can partially act then raise).
         touched = True
-        gui._input.key(0x56, ctrl=True)  # one Ctrl+V; no select-all/delete or paste retry
-        sleep(0.4)
-        control = guard()
-        value = desktop.value(control) if control is not None else None
-        draft_observed = isinstance(value, str) and not _is_blank(value)
+        if file_mode:
+            send_file_key(control, '{Ctrl}v')
+        else:
+            gui._input.key(0x56, ctrl=True)  # one Ctrl+V; no select-all/delete or paste retry
+        for _ in range(10 if file_mode else 1):
+            sleep(0.4)
+            control = guard()
+            value = desktop.value(control) if control is not None else None
+            draft_observed = isinstance(value, str) and not _is_blank(value)
+            if not file_mode or control is None or not _is_blank(value):
+                break
         if not _is_attachment(value):
             return result('unconfirmed', 'no exact attachment draft evidence; Enter not pressed; clear draft manually; do not retry',
                           draft_may_remain=True, draft_observed=draft_observed)
+        if file_mode and check_path(approved)[1] != fingerprint:
+            return result('unconfirmed', 'file changed after paste', draft_may_remain=True, draft_observed=True)
         # Recheck immediately at the irreversible action boundary, including backend generation.
         control = guard()
         if control is None:
@@ -549,18 +580,23 @@ def guarded_send(gui, uia, hwnd, aliases, path, root, db, username, gate,
                           'send gates changed after paste (input reads %r); Enter not pressed; clear draft manually; do not retry'
                           % (str(_post)[:40],),
                           draft_may_remain=True, draft_observed=draft_observed)
-        attempted_enter = True
-        gui._input.key(0x0D)  # exactly one Enter, never Ctrl+Enter or retry
+        if file_mode:
+            send_file_key(control, '{Enter}')
+        else:
+            gui._input.key(0x0D)  # exactly one Enter, never Ctrl+Enter or retry
         outcome = confirm_delivery(db, username, baseline, identity, gate,
                                    timeout=confirm_timeout, sleep=sleep,
-                                   marker=_file_marker(approved))
+                                   marker={'name': os.path.basename(approved)} if file_mode else _file_marker(approved),
+                                   exact=file_mode)
         if outcome['status'] != 'confirmed':
             outcome.update(draft_may_remain=True, draft_observed=draft_observed)
         return outcome
     except Exception as exc:
-        if touched or attempted_enter:
+        if touched:
             return result('unconfirmed', 'attachment action is uncertain; a draft may remain; do not retry',
                           draft_may_remain=True, draft_observed=draft_observed)
         if isinstance(exc, StickerImageError):
             return result('failed', str(exc))
+        if file_mode and isinstance(exc, FileChangedError):
+            return result('failed', 'file_changed')
         return result('failed', 'sticker safety checks or transport are unavailable')
