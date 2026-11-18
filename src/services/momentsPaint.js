@@ -16,7 +16,7 @@ function characterCard(dataDir) {
 async function paint({ dataDir, scene, frontView = false, reference = '', view = 'auto', logger } = {}) {
   if (!dataDir || !scene) return '';
   if (!momentsCodex.available || !momentsCodex.available()) return '';
-  const dir = path.join(dataDir, 'moments', 'paint');
+  const dir = path.join(dataDir, 'moments', 'post-images', 'paint');
   const file = path.join(dir, 'paint-' + Date.now() + '.png');
   try {
     const got = await momentsCodex.generateImage({
