@@ -63,10 +63,51 @@ public static class VoiceSendEngine
   return new Target(h,chat);
  }
  static void Check(Target t){if(GetForegroundWindow()!=t.Hwnd||Chat(t.Hwnd)!=t.Chat)throw new Exception("窗口或会话已变化，取消本次录音");}
+        // Raise the PCM peak so the voice is audible on phone playback.
+        public static void NormalizeWave(string file, double gainDb)
+        {
+            try
+            {
+                if (!File.Exists(file) || double.IsNaN(gainDb) || gainDb <= 0) return;
+                byte[] bytes = File.ReadAllBytes(file);
+                if (bytes.Length < 44) return;
+                if (System.Text.Encoding.ASCII.GetString(bytes, 0, 4) != "RIFF" || System.Text.Encoding.ASCII.GetString(bytes, 8, 4) != "WAVE") return;
+                int pos = 12, dataOffset = -1, dataLen = 0;
+                while (pos + 8 <= bytes.Length)
+                {
+                    string id = System.Text.Encoding.ASCII.GetString(bytes, pos, 4);
+                    int size = BitConverter.ToInt32(bytes, pos + 4);
+                    if (id == "data") { dataOffset = pos + 8; dataLen = Math.Min(size, bytes.Length - dataOffset); break; }
+                    pos += 8 + size + (size & 1);
+                }
+                if (dataOffset < 0 || dataLen < 2) return;
+                int peak = 0;
+                for (int i = dataOffset; i + 1 < dataOffset + dataLen; i += 2)
+                {
+                    int v = Math.Abs((int)BitConverter.ToInt16(bytes, i));
+                    if (v > peak) peak = v;
+                }
+                if (peak < 200) return;
+                double scale = Math.Min(Math.Pow(10, gainDb / 20.0), 30000.0 / peak);
+                if (scale <= 1.0) return;
+                for (int i = dataOffset; i + 1 < dataOffset + dataLen; i += 2)
+                {
+                    int v = (int)Math.Round(BitConverter.ToInt16(bytes, i) * scale);
+                    if (v > 32767) v = 32767; else if (v < -32768) v = -32768;
+                    bytes[i] = (byte)(v & 0xFF);
+                    bytes[i + 1] = (byte)((v >> 8) & 0xFF);
+                }
+                File.WriteAllBytes(file, bytes);
+            }
+            catch { }
+        }
+
  public static async Task Play(string file,string deviceId,Target target,CancellationToken ct,string recordingHotkey="Ctrl+Alt"){
   var shortcut=RecordingShortcut.Parse(recordingHotkey);var held=new List<ushort>();
   ValidateWave(file);using var e=new MMDeviceEnumerator();using var d=e.GetDevice(deviceId);if(d.State!=DeviceState.Active||d.DataFlow!=DataFlow.Render)throw new Exception("所选声卡不可用");
   using var reader=new AudioFileReader(file);using var output=new WasapiOut(d,AudioClientShareMode.Shared,true,100);output.Init(reader);Exception error=null;output.PlaybackStopped+=(_,a)=>error=a.Exception;
+  float previousVolume=1f;bool volumeRaised=false;
+  try{if(d.AudioEndpointVolume!=null){previousVolume=d.AudioEndpointVolume.MasterVolumeLevelScalar;if(previousVolume<0.99f){d.AudioEndpointVolume.MasterVolumeLevelScalar=1.0f;volumeRaised=true;}}}catch{}
   bool holding=false,done=false;
   try{
    if(target!=null)
@@ -84,6 +125,7 @@ public static class VoiceSendEngine
    try{output.Stop();}
    finally
    {
+    if(volumeRaised){try{d.AudioEndpointVolume.MasterVolumeLevelScalar=previousVolume;}catch{}}
     if(holding)
     {
      if(!done)SendMessageTimeout(target.Hwnd,0x100,(IntPtr)0x1B,IntPtr.Zero,2,300,out _);

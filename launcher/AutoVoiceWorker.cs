@@ -22,6 +22,7 @@ public sealed class AutoVoiceSettings
     public string Instructions { get; set; } = "";
     public string RecordingHotkey { get; set; } = "Ctrl+Alt";
     public double SynthTimeoutSec { get; set; } = 85;
+        public double VolumeGainDb { get; set; } = 9;
     public static AutoVoiceSettings Load(string root) => JsonSerializer.Deserialize<AutoVoiceSettings>(File.ReadAllText(Path.Combine(root,"data","voice-send.json")));
     public static bool IsEnabled(string root) { try { return Load(root)?.Enabled == true; } catch { return false; } }
     public static void CancelJobs(string root)
@@ -67,6 +68,7 @@ public static class AutoVoiceWorker
             var key=BreezeSpeech.LoadKey(SpeechProviders.KeyFile(root,settings.Provider));
             double seconds=double.IsFinite(settings.SynthTimeoutSec)?Math.Clamp(settings.SynthTimeoutSec,5,90):85;
             await SpeechProviders.Generate(settings.Provider,key,settings.Model,settings.Voice,job.Text,settings.Instructions,audio,cancel.Token,metrics,TimeSpan.FromSeconds(seconds));
+            VoiceSendEngine.NormalizeWave(audio, settings.VolumeGainDb);
             File.WriteAllText(path+".ready","ready");
             var deadline=DateTime.UtcNow.AddSeconds(25);
             while(!File.Exists(path+".go")){cancel.Token.ThrowIfCancellationRequested();if(DateTime.UtcNow>deadline)throw new Exception("桥接没有确认目标会话");await Task.Delay(100,cancel.Token);}
