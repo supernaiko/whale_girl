@@ -1,0 +1,19 @@
+{
+  "Id": "whale-memo",
+  "Name": "记忆管家",
+  "Author": "Naiko",
+  "Version": "1.0.0",
+  "MinAppVersion": "4.1.2",
+  "Description": "每天晚上从你们的聊天里提炼长期事实、约定和说话习惯，写成草稿发给你，回「确认记忆」才并入人设。",
+  "ResultLabel": "记忆",
+  "Api": 4,
+  "Kind": "message",
+  "Hooks": ["chat.pre_reply", "chat.generate", "timer.tick", "tool.run"],
+  "Permissions": ["system.full"],
+  "ExecutionTimeoutMs": 60000,
+  "IntervalSeconds": 60,
+  "appCompatibility": [
+    { "appEpoch": 1, "minAppVersion": "4.1.2" },
+    { "appEpoch": 2, "minAppVersion": "1.0.0" }
+  ]
+}
