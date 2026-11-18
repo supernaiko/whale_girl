@@ -16,6 +16,8 @@
                         Padding="12,7" Margin="6,0,0,0" Click="OnRange" />
                 <Button x:Name="MonthButton" Content="30 天" Tag="30" Style="{StaticResource Ghost}"
                         Padding="12,7" Margin="6,0,0,0" Click="OnRange" />
+                <Button x:Name="YearButton" Content="一年" Tag="365" Style="{StaticResource Ghost}"
+                        Padding="12,7" Margin="6,0,0,0" Click="OnRange" />
                 <Button x:Name="BtnRefresh" Content="⟳ 刷新" Style="{StaticResource Ghost}"
                         Margin="14,0,0,0" Click="OnRefresh" />
             </StackPanel>

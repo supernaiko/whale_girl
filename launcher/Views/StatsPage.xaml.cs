@@ -118,11 +118,30 @@ namespace WhaleLauncher.Views
             ReplyLengthText.Text = Length(Number(kpi, "avgReplyLen"));
         }
 
+        private static JsonElement SumMonth(Dictionary<string, JsonElement> byDay, DateTimeOffset month)
+        {
+            double tokens = 0, cost = 0, requests = 0;
+            for (var d = 1; d <= DateTime.DaysInMonth(month.Year, month.Month); d++)
+            {
+                var key = new DateTime(month.Year, month.Month, d).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (!byDay.TryGetValue(key, out var row)) continue;
+                tokens += Number(row, "billedTokens"); cost += Number(row, "cost"); requests += Number(row, "requests");
+            }
+            var obj = new Dictionary<string, object> { ["billedTokens"] = tokens, ["cost"] = cost, ["requests"] = requests };
+            return JsonSerializer.SerializeToElement(obj);
+        }
+
         private void RenderDaily(JsonElement daily, DateTimeOffset generated)
         {
             var byDay = Items(daily).ToDictionary(row => Text(row, "day"));
-            var days = Enumerable.Range(0, 7).Select(i => generated.AddDays(i - 6)).ToArray();
-            var rows = days.Select(day => byDay.GetValueOrDefault(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).ToArray();
+            var dailyMode = _days <= 31;
+            var count = dailyMode ? _days : 12;
+            var days = dailyMode
+                ? Enumerable.Range(0, count).Select(i => generated.AddDays(i - count + 1)).ToArray()
+                : Enumerable.Range(0, count).Select(i => generated.AddMonths(i - count + 1)).ToArray();
+            var rows = dailyMode
+                ? days.Select(day => byDay.GetValueOrDefault(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).ToArray()
+                : days.Select(month => SumMonth(byDay, month)).ToArray();
             var maxTokens = rows.Max(row => Number(row, "billedTokens"));
             var maxCost = rows.Max(row => Number(row, "cost"));
 
@@ -146,7 +165,7 @@ namespace WhaleLauncher.Views
 
                 var date = new TextBlock
                 {
-                    Text = days[i].ToString("MM-dd", CultureInfo.InvariantCulture),
+                    Text = dailyMode ? days[i].ToString("MM-dd", CultureInfo.InvariantCulture) : days[i].ToString("M", CultureInfo.InvariantCulture) + "月",
                     HorizontalAlignment = HorizontalAlignment.Center,
                     Margin = new Thickness(0, 5, 0, 0),
                 };

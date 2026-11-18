@@ -16,7 +16,7 @@ namespace WhaleLauncher.Views
     /// <summary>数据面板的概览汇总与 30 秒自动刷新。</summary>
     public partial class PanelPage : UserControl, IRefreshable
     {
-        private const int InsightsDays = 7;
+        private int InsightsDays = 7;
         private readonly record struct TrendPoint(long X, double First, double Second = 0);
         private sealed record ChatRow(string Name, string Messages, string Tokens, string Cost, double Share, string ShareLabel)
         {
@@ -54,6 +54,15 @@ namespace WhaleLauncher.Views
             StatsCanvas.SizeChanged += (_, __) => DrawStats();
             MemoryCanvas.SizeChanged += (_, __) => DrawDailyTrend(MemoryCanvas, _memoryTrend);
             ChatTrendCanvas.SizeChanged += (_, __) => DrawDailyTrend(ChatTrendCanvas, _chatTrend, dual: true);
+        }
+
+        private async void OnInsightRange(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button b && int.TryParse(b.Tag as string, out var days) && days != InsightsDays)
+            {
+                InsightsDays = days;
+                await RefreshAsync();
+            }
         }
 
         private async void OnRefreshClick(object sender, RoutedEventArgs e)
@@ -132,7 +141,7 @@ namespace WhaleLauncher.Views
             ShowBonds(result.Prop("bond"));
         }
 
-        private static TrendPoint[] ReadDailyTrend(JsonElement series, DateTime start, string first, string second = null)
+        private TrendPoint[] ReadDailyTrend(JsonElement series, DateTime start, string first, string second = null)
         {
             // 只有发生过活动的日期才会出现在接口里，按日历补零才能保留真实间隔。
             var points = new TrendPoint[InsightsDays];

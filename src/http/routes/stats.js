@@ -6,7 +6,7 @@ const { json } = require('../util');
 module.exports = function register(router) {
   router.get('/api/stats/overview', async (runtime, req, res, { url }) => {
     const input = url.searchParams.get('days');
-    const days = input === '1' ? 1 : input === '30' ? 30 : 7;
+    const days = /^\d+$/.test(input || '') ? Math.min(365, Math.max(1, Number(input))) : 7;
     // 今天的概览也要有完整的七天图，免得启动器重复扫描会话日志。
     const dailyDays = Math.max(days, 7);
     const now = Date.now();

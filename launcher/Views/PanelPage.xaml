@@ -33,6 +33,11 @@
                        Margin="14,0,0,0" VerticalAlignment="Center" Text="—" />
             <Button DockPanel.Dock="Right" x:Name="BtnRefresh" Content="⟳ 刷新" Style="{StaticResource Ghost}"
                     HorizontalAlignment="Right" Click="OnRefreshClick" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,0,10,0">
+                <Button Content="7 天" Tag="7" Style="{StaticResource Ghost}" Margin="0,0,6,0" Click="OnInsightRange" />
+                <Button Content="30 天" Tag="30" Style="{StaticResource Ghost}" Margin="0,0,6,0" Click="OnInsightRange" />
+                <Button Content="一年" Tag="365" Style="{StaticResource Ghost}" Click="OnInsightRange" />
+            </StackPanel>
         </DockPanel>
 
         <TabControl Grid.Row="1" x:Name="Tabs" Background="Transparent" BorderThickness="0"
@@ -319,6 +324,7 @@
                                     <Button Content="今日" Tag="1" Style="{StaticResource Ghost}" Margin="0,0,6,0" Click="OnCostRange" />
                                     <Button Content="7 天" Tag="7" Style="{StaticResource Ghost}" Margin="0,0,6,0" Click="OnCostRange" />
                                     <Button Content="30 天" Tag="30" Style="{StaticResource Ghost}" Click="OnCostRange" />
+                                    <Button Content="一年" Tag="365" Style="{StaticResource Ghost}" Margin="6,0,0,0" Click="OnCostRange" />
                                 </StackPanel>
                             </DockPanel>
                             <TextBlock x:Name="CostTotal" Text="—" FontSize="30" FontWeight="SemiBold"

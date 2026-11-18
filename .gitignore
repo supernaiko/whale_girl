@@ -78,3 +78,10 @@ promo-video/
 # 本地自维护的成品目录与构建输出（不入库）
 /app/
 /publish/
+
+# local scratch
+/_*.py
+/_*.js
+/_*.log
+/_*.err
+/_*.ps1
