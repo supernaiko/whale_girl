@@ -336,7 +336,7 @@ public sealed partial class MomentsPage : UserControl
             if (generation != viewGeneration) return;
             if (!res.Ok) { PublishStatus.Text = Api.Message(res); return; }
             ShowPublishStatus(res);
-            for (var i = 0; i < 60; i++)
+            for (var i = 0; i < 120; i++)
             {
                 await Task.Delay(2000);
                 if (generation != viewGeneration) return;
@@ -344,6 +344,7 @@ public sealed partial class MomentsPage : UserControl
                 if (generation != viewGeneration) return;
                 if (!res.Ok) { PublishStatus.Text = Api.Message(res); return; }
                 ShowPublishStatus(res);
+                if (res.Str("status") is "generating") PublishStatus.Text = "正在生成（出图约 60~100 秒）· 已等 " + ((i + 1) * 2) + " 秒";
                 if (res.Str("status") is not ("generating" or "queued" or "sending")) return;
             }
             PublishStatus.Text = "发表结果待确认，请到微信核对。";
