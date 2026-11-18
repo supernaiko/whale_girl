@@ -9,6 +9,7 @@ const { describeError } = require('../infra/errors');
 const { installPresets } = require('../adapters/stickerPresets');
 const { fetchPhoto } = require('./momentsPhotos');
 const momentsCodex = require('./momentsCodex');
+const momentsPaint = require('./momentsPaint');
 const { searchPosts, download: downloadWeibo } = require('./weiboPosts');
 const { scheduleSettings, eligibility } = require('./momentsScheduler');
 
@@ -550,22 +551,15 @@ class MomentsPublisher {
 
   async paintFor(sceneText) {
     if (!settingsCodexPaint(this.settings())) return '';
-    try {
-      const character = this.characterCard();
-      const dir = path.join(this.root, 'data', 'moments', 'paint');
-      const file = path.join(dir, 'paint-' + Date.now() + '.png');
-      let reference = '';
-      try { reference = (this.selfImages() || [])[0] || ''; } catch { /* ignore */ }
-      const got = await momentsCodex.generateImage({ scene: sceneText, character, outFile: file, reference });
-      if (got && got.file) { this.logger?.info?.('[moments] paint ok ms=' + got.ms); return got.file; }
-    } catch (error) { this.logger?.warn?.('[moments] paint error: ' + error.message); }
-    return '';
-  }
-
-  characterCard() {
-    try {
-      return JSON.parse(fs.readFileSync(path.join(this.root, 'data', 'moments', 'character.json'), 'utf8'));
-    } catch { return null; }
+    let reference = '';
+    try { reference = (this.selfImages() || [])[0] || ''; } catch { /* ignore */ }
+    const file = await momentsPaint.paint({
+      dataDir: path.join(this.root, 'data'),
+      scene: sceneText,
+      reference,
+      logger: this.logger,
+    });
+    return file || '';
   }
 
   queueDraft(draft, account, settings, extra, withImage = settings.withImage, photo = '') {

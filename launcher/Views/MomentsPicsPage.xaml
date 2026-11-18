@@ -27,7 +27,7 @@
                         <Button x:Name="BtnRun" Content="▶ 跑一次" Style="{StaticResource Primary}" Click="OnRun" />
                     </StackPanel>
                 </DockPanel>
-                <TextBlock Style="{StaticResource Muted}" Margin="0,6,0,0" TextWrapping="Wrap"
+                <TextBlock Foreground="{StaticResource Muted}" Margin="0,6,0,0" TextWrapping="Wrap"
                            Text="写一句你想让它发的场景，比如「今天想吃火锅」「加班到十一点」。它会先找候选图，再让 Codex 看图挑一张、写一句。" />
                 <TextBox x:Name="PromptInput" Margin="0,10,0,0" MinHeight="60" TextWrapping="Wrap" AcceptsReturn="True" />
                 <DockPanel Margin="0,8,0,0" LastChildFill="False">
@@ -129,7 +129,7 @@
                 </DockPanel>
                 <CheckBox x:Name="ChkNoPerson" Margin="0,10,0,0" Content="配图优先选没有人的照片（食物、街景、猫、背影）" />
                 <CheckBox x:Name="ChkRepeat" Margin="0,6,0,0" Content="允许重复发日常梗（饿了、困、不想上班）" />
-                <TextBlock Style="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
+                <TextBlock Foreground="{StaticResource Muted}" Margin="0,8,0,0" TextWrapping="Wrap"
                            Text="出图提示词在 docs\prompts\self-photo.md：身份段固定、场景段每次换一句，出完图放进上面目录当「她本人」。" />
             </StackPanel>
         </Border>
