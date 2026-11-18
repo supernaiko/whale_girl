@@ -24,6 +24,7 @@ const modules = [
   require('./budget'),
   require('./memory'),
   require('./moments'),
+  require('./momentsPics'),
   require('./plugins'),
   require('./yxn'),
 ];

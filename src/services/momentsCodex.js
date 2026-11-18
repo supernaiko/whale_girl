@@ -23,7 +23,7 @@ function available() {
   return fs.existsSync(codexEntry()) && typeof process.execPath === 'string';
 }
 
-function buildPrompt({ name, desc, mood, lines, selfCount = 0 }) {
+function buildPrompt({ name, desc, mood, lines, selfCount = 0, extra = '' }) {
   return [
     '你在帮她发一条朋友圈。下面是候选照片（用 -i 传给你的图片，按顺序，下标从 0 开始）。',
     '挑一张最合适的，再写一句配文。',
@@ -48,6 +48,7 @@ function buildPrompt({ name, desc, mood, lines, selfCount = 0 }) {
     '',
     '只输出一行 JSON，不要 Markdown、不要解释：{"pick":0,"text":"…","person":false}',
     'person 表示你选的照片里有没有清晰的人物（有就 true）。',
+    extra ? '额外要求：' + extra : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -75,7 +76,10 @@ function parseResult(text, count) {
 function choose(input = {}) {
   const images = (input.images || []).filter(file => file && fs.existsSync(file)).slice(0, 5);
   if (!images.length || !available()) return Promise.resolve(null);
-  const prompt = buildPrompt({ name: input.name, desc: input.desc, mood: input.mood, lines: input.lines });
+  const prompt = buildPrompt({
+    name: input.name, desc: input.desc, mood: input.mood, lines: input.lines,
+    selfCount: input.selfCount || 0, extra: input.extra || '',
+  });
   const args = [
     codexEntry(), 'exec',
     '-C', input.cwd || os.tmpdir(),
@@ -109,7 +113,9 @@ function choose(input = {}) {
     child.on('error', error => finish(null, 'spawn ' + error.message));
     child.on('close', code => {
       const parsed = parseResult(out, images.length);
+      if (typeof input.onRaw === 'function') { try { input.onRaw(out); } catch { /* ignore */ } }
       if (!parsed) return finish(null, 'exit ' + code + ' ' + err.slice(-200));
+      if (typeof input.onRaw === 'function') { try { input.onRaw(out); } catch { /* ignore */ } }
       finish(parsed, '');
     });
   });

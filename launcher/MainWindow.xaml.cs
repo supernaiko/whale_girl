@@ -46,7 +46,8 @@ namespace WhaleLauncher
             new NavEntry { Key = "人设", Label = "人设", Icon = Geometry.Parse("M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7") },
             new NavEntry { Key = "心情", Label = "心情", Icon = Geometry.Parse("M12 21s-7-4.6-7-10a4.2 4.2 0 0 1 7-3 4.2 4.2 0 0 1 7 3c0 5.4-7 10-7 10Z") },
             new NavEntry { Key = "说话方式", Label = "说话方式", Icon = Geometry.Parse("M4 6h16v10H9l-4 4v-4H4z M8 10h8 M8 13h5") },
-            new NavEntry { Key = "本地回话", Label = "本地回话", Icon = Geometry.Parse("M4 5h16v11H9l-5 4V5z M8 9h8 M8 12h5") },
+            new NavEntry { Key = "配图与本人", Label = "配图与本人", Icon = Geometry.Parse("M4 5h16v14H4z M8 13l3-3 3 3 2-2 3 3") },
+                    new NavEntry { Key = "本地回话", Label = "本地回话", Icon = Geometry.Parse("M4 5h16v11H9l-5 4V5z M8 9h8 M8 12h5") },
             new NavEntry { Key = "表情包", Label = "表情包", Icon = Geometry.Parse("M4 4h16v16H4z M8.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z M20 16l-4.6-4.6L7 20") },
             new NavEntry { Key = "朋友圈", Label = "朋友圈", Icon = Geometry.Parse("M4 8h3l2-3h6l2 3h3v12H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z") },
             new NavEntry { Key = "主动与提醒", Label = "主动与提醒", Icon = Geometry.Parse("M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8 M10.5 20a2 2 0 0 0 3 0") },
@@ -551,6 +552,7 @@ namespace WhaleLauncher
                 case "心情": return new MoodPage(_sup);
                 case "说话方式": return new VoicePage(_sup);
                 case "本地回话": return new YxnChatPage(_sup);
+                case "配图与本人": return new MomentsPicsPage(_sup);
                 case "表情包": return new StickerPage(_sup);
                 case "语音发送": return new VoiceSendPage(_sup);
                 case "朋友圈": return new MomentsPage(_sup);
