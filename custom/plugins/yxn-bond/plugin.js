@@ -170,6 +170,7 @@ async function onPreReply(ctx) {
   const events = eventsFromText(message.text);
   if (events.length) state.mood = applyEvents(state.mood, events);
   updatePerson(state, message, events, now);
+  if (events.length) { state.historyAt = 0; recordHistory(file, state, now); }
   saveState(file, state);
   return { action: 'pass' };
 }
@@ -183,10 +184,41 @@ async function onPrompt(ctx) {
   return { system: `${ctx.system || ''}\n\n${extra}`.trim() };
 }
 
+const HISTORY_STEP_MS = 5 * 60 * 1000;
+const HISTORY_KEEP_MS = 30 * 24 * 3600 * 1000;
+
+/** 限制快照的写入频率和保留时间，避免面板绘图时扫描过多历史。 */
+function recordHistory(file, state, now) {
+  if (!file) return;
+  const hist = path.join(path.dirname(file), 'mood-history.jsonl');
+  try {
+    const last = num(state.historyAt, 0);
+    if (last && now - last < HISTORY_STEP_MS) return;
+    fs.appendFileSync(hist, JSON.stringify({
+      at: now,
+      v: Math.round(num(state.mood.valence, BASELINE.valence)),
+      e: Math.round(num(state.mood.energy, BASELINE.energy)),
+    }) + '\n', 'utf8');
+    state.historyAt = now;
+    try {
+      const text = fs.readFileSync(hist, 'utf8');
+      const lines = text.split('\n').filter(Boolean);
+      if (lines.length > 60) {
+        const keep = lines.filter((line) => {
+          try { return now - Number(JSON.parse(line).at) <= HISTORY_KEEP_MS; } catch { return false; }
+        });
+        if (keep.length !== lines.length) fs.writeFileSync(hist, keep.join('\n') + '\n', 'utf8');
+      }
+    } catch { /* ignore */ }
+  } catch { /* ignore */ }
+}
+
 async function onTick(ctx) {
   const file = stateFile(ctx);
   const state = loadState(file);
-  state.mood = decayMood(state.mood, state.baseline, Date.now());
+  const now = Date.now();
+  state.mood = decayMood(state.mood, state.baseline, now);
+  recordHistory(file, state, now);
   saveState(file, state);
   return {};
 }

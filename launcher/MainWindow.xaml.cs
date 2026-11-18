@@ -36,15 +36,11 @@ namespace WhaleLauncher
         private bool _refreshing;
         private bool _memoryNoticeChecked;
 
-        // 官网和赞助入口固定在侧栏底部；链接写死，不依赖内核或网络配置，断网时浏览器自行提示。
-        private const string OfficialSite = "https://bot.zyyc.cc/";
-        private const string SponsorPage = "https://afdian.com/a/Banan1ce";
-
         private static readonly NavEntry[] NavKeys =
         {
             new NavEntry { Key = "状态", Label = "状态", Icon = Geometry.Parse("M4 4h7v7H4z M13 4h7v4h-7z M13 10h7v10h-7z M4 13h7v7H4z") },
             new NavEntry { Key = "人设", Label = "人设", Icon = Geometry.Parse("M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7") },
-            new NavEntry { Key = "心情", Label = "心情", Icon = Geometry.Parse("M12 21s-7-4.6-7-10a4.2 4.2 0 0 1 7-3 4.2 4.2 0 0 1 7 3c0 5.4-7 10-7 10Z") },
+            new NavEntry { Key = "数据面板", Label = "数据面板", Icon = Geometry.Parse("M4 20h16 M6 17v-6 M12 17V5 M18 17V8") },
             new NavEntry { Key = "说话方式", Label = "说话方式", Icon = Geometry.Parse("M4 6h16v10H9l-4 4v-4H4z M8 10h8 M8 13h5") },
             new NavEntry { Key = "配图与本人", Label = "配图与本人", Icon = Geometry.Parse("M4 5h16v14H4z M8 13l3-3 3 3 2-2 3 3") },
                     new NavEntry { Key = "本地回话", Label = "本地回话", Icon = Geometry.Parse("M4 5h16v11H9l-5 4V5z M8 9h8 M8 12h5") },
@@ -56,8 +52,6 @@ namespace WhaleLauncher
             new NavEntry { Key = "插件市场", Label = "插件市场", Icon = Geometry.Parse("M4 9h16v11H4z M3 5h18v4H3z M10 13h4") },
             new NavEntry { Key = "Codex 日志", Label = "Codex 日志", Icon = Geometry.Parse("M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7") },
             new NavEntry { Key = "调试台", Label = "调试台", Icon = Geometry.Parse("M4 5h16v14H4z M8 9l3 3-3 3 M13 15h3") },
-            new NavEntry { Key = "花销", Label = "花销", Icon = Geometry.Parse("M4 6h16v13H4z M4 9h16 M14 14h3") },
-            new NavEntry { Key = "统计", Label = "统计", Icon = Geometry.Parse("M4 20h16 M6 17v-6 M12 17V5 M18 17V8") },
             new NavEntry { Key = "备份", Label = "备份与迁移", Icon = Geometry.Parse("M4 7h16v10H4z M9 7V4h6v3 M9 17v3h6v-3") },
             new NavEntry { Key = "设置", Label = "设置", Icon = Geometry.Parse("M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.12.4.5.86 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z") },
         };
@@ -197,17 +191,17 @@ namespace WhaleLauncher
             return 0;
         }
 
-        private void SetUpdateButton(bool hasUpdate)
-        {
-            BtnUpdate.Content = hasUpdate ? "有新版本" : "检查更新";
-        }
+        // 更新检查入口已移除（不再连上游仓库），保留空实现让调用点不用改。
+        private void SetUpdateButton(bool hasUpdate) { }
 
         private async void OnCheckUpdate(object sender, RoutedEventArgs e)
         {
+            return;
+#pragma warning disable CS0162
             if (_updating || _checkingUpdates) return;
             _checkingUpdates = true;
-            BtnUpdate.IsEnabled = false;
             StatusLine.Text = "正在检查更新…";
+#pragma warning restore CS0162
             try
             {
                 var chk = await UpdateManifestService.FetchAsync(_sup.BaseDir);
@@ -216,7 +210,6 @@ namespace WhaleLauncher
             }
             finally
             {
-                BtnUpdate.IsEnabled = true;
                 _checkingUpdates = false;
             }
         }
@@ -225,18 +218,8 @@ namespace WhaleLauncher
         /// 拿清单结果决定界面形态。这里只做「提示 / 强制 / 禁止启动」的判定，
         /// 不下载；真下载交给 UpdateService 下载官方安装包。
         /// </summary>
-        private async Task SilentUpdateCheckAsync(bool allowBlocking = false)
-        {
-            if (_updating || _checkingUpdates) return;
-            _checkingUpdates = true;
-            _lastManifestCheck = DateTime.Now;
-            try
-            {
-                var chk = await UpdateManifestService.FetchAsync(_sup.BaseDir);
-                ApplyManifestPolicy(chk, false, allowBlocking);
-            }
-            finally { _checkingUpdates = false; }
-        }
+        // 版本检查已停用：不再访问上游仓库。
+        private Task SilentUpdateCheckAsync(bool allowBlocking = false) => Task.CompletedTask;
 
         /// <summary>
         /// 挂后台一直不关的用户，也需要知道有新版。
@@ -341,7 +324,6 @@ namespace WhaleLauncher
             }
 
             _updating = true;
-            BtnUpdate.IsEnabled = false;
             ShowUpdateProgress("正在更新…", -1);
             try
             {
@@ -376,7 +358,6 @@ namespace WhaleLauncher
             finally
             {
                 _updating = false;
-                BtnUpdate.IsEnabled = true;
             }
         }
 
@@ -550,7 +531,7 @@ namespace WhaleLauncher
             {
                 case "状态": return new StatusPage(_sup);
                 case "人设": return new PersonaPage(_sup);
-                case "心情": return new MoodPage(_sup);
+                case "心情": return new PanelPage(_sup);
                 case "说话方式": return new VoicePage(_sup);
                 case "本地回话": return new YxnChatPage(_sup);
                 case "配图与本人": return new MomentsPicsPage(_sup);
@@ -565,8 +546,9 @@ namespace WhaleLauncher
                 case "设置": return new SettingsPage(_sup);
                 case "Codex 日志": return new CodexLogPage(_sup);
                 case "调试台": return new DebugPage(_sup);
-                case "花销": return new CostPage(_sup);
-                case "统计": return new StatsPage(_sup);
+                case "花销": return new PanelPage(_sup);
+                case "数据面板": return new PanelPage(_sup);
+            case "统计": return new PanelPage(_sup);
                 default:
                     return new PlaceholderPage(key, "这一页还没做。");
             }
@@ -581,10 +563,6 @@ namespace WhaleLauncher
         }
 
         private void OnSettings(object sender, RoutedEventArgs e) => GoTo("设置");
-
-        private void OnOpenWebsite(object sender, RoutedEventArgs e) => OpenExternal(OfficialSite, "打开官网失败");
-
-        private void OnOpenSponsor(object sender, RoutedEventArgs e) => OpenExternal(SponsorPage, "打开赞助页面失败");
 
         private void OpenExternal(string url, string failureTitle)
         {

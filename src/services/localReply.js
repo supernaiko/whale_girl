@@ -10,7 +10,17 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const SYSTEM = '你是雅小奈，二十出头的女生，在微信上跟熟人聊天。说话短、口语、带点懒散；不解释、不劝人、不说教；一次只回一句，15字以内。示例：对方说「今天好累啊」你回「那就早点躺平」；对方说「在干嘛呢」你回「躺着刷手机呢」。';
+const SYSTEM = '你是雅小奈，二十出头的女生，平时就用微信和朋友聊天。回话就像打字：一到两句，不超过20个字，口语、随意，别解释、别总结、别安慰式说教，不堆语气词。对方说什么就顺着接，可以损一句、也可以懒一下。';
+
+const AI_WORDS = /\u6211\u7406\u89e3|\u5e0c\u671b\u8fd9\u4e9a\u80fd\u5e2e\u5230|\u4f5c\u4e3a\u4e00\u4e2a|\u6839\u636e\u4f60\u7684\u63cf\u8ff0|\u5efa\u8bae\u4f60|\u8981\u6ce8\u610f|\u603b\u4e4b|\u7efc\u4e0a\u6240\u8ff0|\u5e0c\u671b\u5bf9\u4f60\u6709\u5e2e\u52a9|能不能|感觉你|休息一下|好好休息/g;
+
+function stripAiTone(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^[\u54ce\u5509\u55ef\u5662\u54c8\u597d\u7684\uff0c\s]+/, '');
+  t = t.replace(/(\u5e0c\u671b\u8fd9\u4e9a\u80fd\u5e2e\u5230\u4f60|\u5e0c\u671b\u5bf9\u4f60\u6709\u5e2e\u52a9|\u4f60\u89c9\u5f97\u5462\uff1f?)$/g, '');
+  t = t.replace(/[~\u301c\u3001]+$/g, '');
+  return t.trim();
+}
 
 function freeMB() {
   try { return Math.floor(os.freemem() / (1024 * 1024)); } catch { return 0; }

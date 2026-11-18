@@ -159,6 +159,24 @@ function chatSnapshot(dataDir) {
 }
 
 
+function readMoodHistory(dataDir, now, hours = 24) {
+  const file = path.join(dataDir, 'plugins', 'yxn-bond.data', 'mood-history.jsonl');
+  const since = now - hours * 3600 * 1000;
+  let lines = [];
+  try { lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean); } catch { return []; }
+  const points = [];
+  for (const line of lines) {
+    try {
+      const row = JSON.parse(line);
+      if (num(row.at, 0) >= since) points.push({ t: num(row.at, 0), v: clamp(num(row.v, 55), 0, 100), e: clamp(num(row.e, 50), 0, 100) });
+    } catch { /* skip */ }
+  }
+  points.sort((a, b) => a.t - b.t);
+  if (points.length <= 96) return points;
+  const step = Math.ceil(points.length / 96);
+  return points.filter((_, i) => i % step === 0 || i === points.length - 1);
+}
+
 function register(router) {
   router.get('/api/yxn/status', (runtime, req, res) => {
     const { dataDir } = runtime.config.paths;
@@ -178,8 +196,10 @@ function register(router) {
       .sort((a, b) => b.closeness - a.closeness)
       .slice(0, 30);
 
+    const now = Date.now();
     return json(res, 200, {
       ok: true,
+      history: readMoodHistory(dataDir, now),
       mood: {
         valence: Math.round(valence),
         energy: Math.round(energy),

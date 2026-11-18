@@ -9,22 +9,22 @@ const { BEIJING, normalizePricing, usagePricer } = require('./pricing');
 // 回复总字数只用于加权计算，接口的会话行无需携带这个中间值。
 const replyChars = Symbol('replyChars');
 
-function timestamp(value) {
-  if (typeof value === 'string') value = parseDateTimeLoose(value, BEIJING);
+function timestamp(value, timeZone = BEIJING) {
+  if (typeof value === 'string') value = parseDateTimeLoose(value, timeZone);
   return Number.isFinite(value) && Number.isFinite(new Date(value).getTime()) ? value : NaN;
 }
 
-function dateRange({ days = 7, now = Date.now() }) {
+function dateRange({ days = 7, now = Date.now(), timeZone = BEIJING }) {
   const count = Number.isInteger(days) && days > 0 ? days : 7;
-  const { year, month, day } = parts(+now, BEIJING);
+  const { year, month, day } = parts(+now, timeZone);
   const today = { year, month, day };
-  const start = toEpoch(addDays(today, 1 - count), BEIJING);
-  const end = toEpoch(addDays(today, 1), BEIJING);
+  const start = toEpoch(addDays(today, 1 - count), timeZone);
+  const end = toEpoch(addDays(today, 1), timeZone);
   return at => at >= start && at < end;
 }
 
 function parseJson(text) {
-  try { return JSON.parse(text.replace(/^\uFEFF/, '')); } catch { return null; }
+  try { return JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text); } catch { return null; }
 }
 
 async function readJson(file) {
@@ -40,6 +40,7 @@ async function* readRows(stream) {
   const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
   try {
     for await (const line of lines) {
+      if (!line) continue;
       const row = parseJson(line);
       if (row && typeof row === 'object' && !Array.isArray(row)) yield row;
     }
@@ -69,7 +70,7 @@ async function loadUsage(dataDir, options = {}) {
     while (files.length) {
       const { file, fd } = files.shift();
       for await (const row of readRows(fs.createReadStream(file, { fd, encoding: 'utf8' }))) {
-        const at = timestamp(row.at);
+        const at = timestamp(row.at, options.timeZone);
         if (inRange(at)) rows.push({ ...row, at });
       }
     }
@@ -219,4 +220,7 @@ function loadPricing(dataDir) {
   return readJson(path.join(dataDir, 'pricing.json'));
 }
 
-module.exports = { loadUsage, dailyBuckets, computeCost, chatStats, hourlyHeatmap, kpi, loadPricing };
+module.exports = {
+  loadUsage, dailyBuckets, computeCost, chatStats, hourlyHeatmap, kpi, loadPricing,
+  nameOf, readJson, readRows, timestamp,
+};

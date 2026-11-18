@@ -46,11 +46,11 @@ function normalizePricing(saved) {
   return { currency: DEFAULT_PRICING.currency, models, offPeakWindow: start === end ? defaults : { start, end } };
 }
 
-function usagePricer(pricing) {
+function usagePricer(pricing, timeZone = BEIJING) {
   const { models, offPeakWindow } = pricing;
   const windows = [{ start: parseClock(offPeakWindow.start), end: parseClock(offPeakWindow.end) }];
   return (row, at) => {
-    const band = inWindows(minutesOfDay(at, BEIJING), windows) ? 'offPeak' : 'peak';
+    const band = inWindows(minutesOfDay(at, timeZone), windows) ? 'offPeak' : 'peak';
     const model = row.model === 'deepseek-v4-pro' && models.pro ? models.pro : models.flash;
     const { cacheHitPerM, cacheMissPerM, outputPerM } = model[band];
     const prompt = nonnegative(row.prompt);
