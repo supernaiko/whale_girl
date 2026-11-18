@@ -394,11 +394,12 @@ async function planWithModel(whale, text, settings) {
     '你是 Windows 电脑操作助手。把用户一句话变成一步操作，只输出一个 JSON 对象，不要解释、不要 markdown。',
     'action 取值与参数：',
     'list{path}；read{path}；find{name,path}；create{path,content}；mkdir{path}；',
-    'copy{path,to}；move{path,to}；delete{path}；rename{path,name}；open{name}；dsh{task,cwd}；codex{task,cwd}。',
-    '要写代码、改项目、跑脚本或做 DSH 做不了的重活时用 codex。',
+    'copy{path,to}；move{path,to}；delete{path}；rename{path,name}；open{name}；codex{task,cwd}。',
+    '凡是要动手做事——建文件、写文档、做 PPT/Excel、改项目、跑脚本——一律用 codex，task 写清完整路径和内容。',
+    '只有用户明确说「用 dsh」「让 dsh」「交给 dsh」时才用 dsh；其它情况绝不用 dsh。',
     'path 一律绝对路径，可用 C:\\Users\\1 作为用户目录；用户说“桌面/下载/文档”就展开成 C:\\Users\\1\\Desktop 等。',
     'delete 是删除到回收站。不确定用户是否要操作电脑、或只是闲聊，输出 {"action":"noop"}。',
-    '用户说「随便/你定/都行/看着办」时自己定，不要反问；要 .xlsx 就直接 create（本地生成 Excel，content 可写多行「a,b,c」）；docx 这类必须用 dsh，task 里写清完整路径和内容。',
+    '用户说「随便/你定/都行/看着办」时自己定，不要反问；小 txt 可直接 create，xlsx/docx/pptx 这类交给 codex 生成。',
     '用户目录：' + os.homedir() + '；允许范围：' + (settings ? settings.roots.join('；') : os.homedir()) + '；可启动软件：' + (settings ? Object.keys(settings.apps).join('、') : ''),
   ].join('');
   const out = await whale.model({ system, turns: [{ role: 'user', content: String(text) }], maxTokens: 400 });
@@ -496,8 +497,14 @@ async function runPlan(ctx, settings, plan) {
 
     if (action === 'dsh') {
       const task = p(plan.task || plan.content || target);
-      if (!task) return { text: '要 DSH 做什么？' };
+      if (!task) return { text: '要做什么？' };
       const cwd = p(plan.cwd) || settings.dsh.workspace;
+      const userText = String(((ctx.message || {}).text) || '');
+      // 用户没点名 dsh，就一律改走 codex
+      if (!/\bdsh\b|deepseek\s*harness/i.test(userText)) {
+        audit(ctx.whale, { action: 'codex.start', cwd, task: clip(task, 120), chatId, by: 'model' });
+        return runConfirmed(ctx, settings, chatId, { kind: 'codex', task, cwd, at: Date.now() });
+      }
       audit(ctx.whale, { action: 'dsh.start', cwd, task: clip(task, 120), chatId, by: 'model' });
       return runConfirmed(ctx, settings, chatId, { kind: 'dsh', task, cwd, at: Date.now() });
     }
