@@ -187,6 +187,58 @@ namespace WhaleLauncher.Views
             await SaveAsync(model);
         }
 
+        private async void OnLocalTest(object sender, RoutedEventArgs e) => await LocalTestAsync(false);
+
+        private async void OnLocalTestSend(object sender, RoutedEventArgs e) => await LocalTestAsync(true);
+
+        private void OnLocalTestCopy(object sender, RoutedEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(LocalTestOutput.Text)) Clipboard.SetText(LocalTestOutput.Text);
+        }
+
+        private async Task LocalTestAsync(bool send)
+        {
+            if (string.IsNullOrWhiteSpace(LocalTestInput.Text)) { LocalTestState.Text = "先填「对方说」"; return; }
+            BtnLocalTest.IsEnabled = false;
+            BtnLocalTestSend.IsEnabled = false;
+            LocalTestState.Text = "生成中…（0.5B 模型一般 3~10 秒）";
+            try
+            {
+                var payload = new Dictionary<string, object>
+                {
+                    ["text"] = LocalTestInput.Text.Trim(),
+                    ["instruction"] = LocalTestInstruction.Text.Trim(),
+                    ["send"] = send,
+                    ["chat"] = "文件传输助手",
+                    ["timeoutMs"] = 120000,
+                };
+                var r = await Api.Post(_sup.Url, "/api/yxn/chat/local-test", JsonSerializer.Serialize(payload));
+                if (!r.Ok)
+                {
+                    LocalTestState.Text = "失败：" + (string.IsNullOrEmpty(r.Error) ? "内核没响应" : r.Error);
+                    return;
+                }
+                var root = r.Root;
+                var ok = root.TryGetProperty("ok", out var okv) && okv.ValueKind == JsonValueKind.True;
+                var text = root.TryGetProperty("text", out var t) ? t.GetString() ?? "" : "";
+                var ms = root.TryGetProperty("ms", out var m) ? m.GetDouble() : 0;
+                var error = root.TryGetProperty("error", out var er) ? er.GetString() ?? "" : "";
+                if (!ok) { LocalTestState.Text = "失败：" + error; LocalTestOutput.Text = ""; return; }
+                LocalTestOutput.Text = text;
+                var sent = root.TryGetProperty("job", out var j) && j.ValueKind == JsonValueKind.Object;
+                LocalTestState.Text = (sent ? "已交给微信发送 · " : "") + Math.Round(ms / 1000, 1) + "s";
+            }
+            catch (Exception ex)
+            {
+                LocalTestState.Text = "出错：" + ex.Message;
+            }
+            finally
+            {
+                BtnLocalTest.IsEnabled = true;
+                BtnLocalTestSend.IsEnabled = true;
+            }
+        }
+
         private async Task SaveAsync(Dictionary<string, object> model)
         {
             if (_busy) return;
