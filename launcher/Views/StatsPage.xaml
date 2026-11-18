@@ -18,6 +18,10 @@
                         Padding="12,7" Margin="6,0,0,0" Click="OnRange" />
                 <Button x:Name="YearButton" Content="一年" Tag="365" Style="{StaticResource Ghost}"
                         Padding="12,7" Margin="6,0,0,0" Click="OnRange" />
+                <DatePicker x:Name="FromPicker" Width="120" Margin="10,0,0,0" />
+                <TextBlock Text="—" Style="{StaticResource Small}" Margin="6,0" VerticalAlignment="Center" />
+                <DatePicker x:Name="ToPicker" Width="120" />
+                <Button Content="应用" Style="{StaticResource Ghost}" Padding="10,7" Margin="6,0,0,0" Click="OnApplyRange" />
                 <Button x:Name="BtnRefresh" Content="⟳ 刷新" Style="{StaticResource Ghost}"
                         Margin="14,0,0,0" Click="OnRefresh" />
             </StackPanel>
@@ -79,7 +83,7 @@
                 <Border Style="{StaticResource Card}" Padding="16,12" Margin="0,0,0,14">
                     <StackPanel>
                         <DockPanel LastChildFill="False">
-                            <TextBlock DockPanel.Dock="Left" Text="最近 7 天" Style="{StaticResource H2}" />
+                            <TextBlock x:Name="HeatTitle" DockPanel.Dock="Left" Text="最近 7 天" Style="{StaticResource H2}" />
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Rectangle Width="8" Height="8" RadiusX="2" RadiusY="2" Fill="{DynamicResource Accent}" />
                                 <TextBlock Text="计费 token" Style="{StaticResource Small}" Foreground="{StaticResource Muted}" Margin="5,0,14,0" />

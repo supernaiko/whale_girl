@@ -35,6 +35,8 @@ namespace WhaleLauncher.Views
         private string _trendStart = "";
         private string _trendEnd = "";
         private int _costDays = 7;
+        private string _from = "";
+        private string _to = "";
         private int _costLoadId;
         private bool _busy;
 
@@ -63,6 +65,17 @@ namespace WhaleLauncher.Views
                 InsightsDays = days;
                 await RefreshAsync();
             }
+        }
+
+        private async void OnApplyRange(object sender, RoutedEventArgs e)
+        {
+            if (FromPicker.SelectedDate is not { } from || ToPicker.SelectedDate is not { } to) return;
+            if (to < from) return;
+            _from = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            _to = to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            InsightsDays = Math.Min(365, (int)(to - from).TotalDays + 1);
+            _costDays = InsightsDays;
+            await RefreshAsync();
         }
 
         private async void OnRefreshClick(object sender, RoutedEventArgs e)
@@ -103,7 +116,9 @@ namespace WhaleLauncher.Views
 
         private async Task LoadInsightsAsync()
         {
-            var result = await Api.Get(_sup.Url, $"/api/insights/series?days={InsightsDays}&bucket=day");
+            var result = await Api.Get(_sup.Url, _from.Length > 0 && _to.Length > 0
+                ? $"/api/insights/series?from={_from}&to={_to}&bucket=day"
+                : $"/api/insights/series?days={InsightsDays}&bucket=day");
             if (!result.Ok || LocalTime(result.Root, "generatedAt") is not { } generated)
             {
                 MemoryHint.Text = "暂时无法读取记忆记录";
@@ -458,7 +473,9 @@ namespace WhaleLauncher.Views
             var range = days == 1 ? "今日" : $"近 {days} 天";
             try
             {
-                var r = await Api.Get(_sup.Url, "/api/cost/usage?days=" + days);
+                var r = await Api.Get(_sup.Url, _from.Length > 0 && _to.Length > 0 && days == _costDays
+                ? "/api/cost/usage?from=" + _from + "&to=" + _to
+                : "/api/cost/usage?days=" + days);
                 // 切换时段时，新请求可能比自动刷新的旧请求先返回。
                 if (loadId != _costLoadId) return;
                 var root = r.Root;

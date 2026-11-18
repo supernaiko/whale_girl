@@ -19,6 +19,8 @@ namespace WhaleLauncher.Views
         private readonly RuntimeSupervisor _sup;
         private readonly DispatcherTimer _timer;
         private int _days = 7;
+        private string _from = "";
+        private string _to = "";
         private long _nextRefresh;
         private bool _refreshing;
 
@@ -45,7 +47,8 @@ namespace WhaleLauncher.Views
         {
             if (sender is not Button button || !int.TryParse(button.Tag as string, out var days) || days == _days) return;
             _days = days;
-            foreach (var option in new[] { TodayButton, WeekButton, MonthButton })
+            _from = _to = "";
+            foreach (var option in new[] { TodayButton, WeekButton, MonthButton, YearButton })
                 option.SetResourceReference(StyleProperty, option == button ? "Primary" : "Ghost");
 
             UpdatedText.Text = "—";
@@ -55,6 +58,20 @@ namespace WhaleLauncher.Views
             ChatsList.ItemsSource = null;
             ChatsEmpty.Visibility = Visibility.Collapsed;
             SetStatus("正在读取统计…");
+            await LoadOverviewAsync();
+        }
+
+        private async void OnApplyRange(object sender, RoutedEventArgs e)
+        {
+            if (FromPicker.SelectedDate is not { } from || ToPicker.SelectedDate is not { } to) { SetStatus("先选起止日期"); return; }
+            if (to < from) { SetStatus("结束日期不能早于开始"); return; }
+            _from = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            _to = to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            _days = Math.Min(366, (int)(to - from).TotalDays + 1);
+            foreach (var option in new[] { TodayButton, WeekButton, MonthButton, YearButton })
+                option.SetResourceReference(StyleProperty, "Ghost");
+            UpdatedText.Text = "—";
+            SetStatus("正在读取 " + _from + " ~ " + _to + " …");
             await LoadOverviewAsync();
         }
 
@@ -74,7 +91,9 @@ namespace WhaleLauncher.Views
                     _nextRefresh = Environment.TickCount64 + (long)_timer.Interval.TotalMilliseconds;
                     _timer.Stop();
                     _timer.Start();
-                    var path = $"/api/stats/overview?days={days}";
+                    var path = _from.Length > 0 && _to.Length > 0
+                        ? $"/api/stats/overview?from={_from}&to={_to}"
+                        : $"/api/stats/overview?days={days}";
                     var response = await Api.Get(_sup.Url, path);
                     if (!_timer.IsEnabled || days != _days) continue;
 
@@ -90,6 +109,7 @@ namespace WhaleLauncher.Views
                     RenderKpis(response.Prop("kpi"));
                     RenderDaily(response.Prop("daily"), generated);
                     RenderHeatmap(response.Prop("heatmap"));
+                    HeatTitle.Text = _from.Length > 0 ? _from + " ~ " + _to : $"最近 {_days} 天";
                     RenderChats(response.Prop("chats"));
                     UpdatedText.Text = $"更新于 {generated:MM-dd HH:mm:ss}";
                     SetStatus("");

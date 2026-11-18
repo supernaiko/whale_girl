@@ -1,4 +1,5 @@
 'use strict';
+const { parseRange } = require('../range');
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -46,13 +47,12 @@ function emptyUsage() {
   return { requests: 0, prompt: 0, cached: 0, completion: 0, costCny: 0 };
 }
 
-function summarize(dataDir, days, pricing) {
-  const midnight = new Date();
+function summarize(dataDir, range, pricing) {
+  const start = new Date(range.start);
+  const end = new Date(range.end);
+  const nowDate = new Date(range.now);
+  const midnight = new Date(nowDate);
   midnight.setHours(0, 0, 0, 0);
-  const start = new Date(midnight);
-  const end = new Date(midnight);
-  start.setDate(start.getDate() - days + 1);
-  end.setDate(end.getDate() + 1);
   const total = emptyUsage();
   const bands = { peak: emptyUsage(), offPeak: emptyUsage() };
   const buckets = new Map();
@@ -104,10 +104,9 @@ function summarize(dataDir, days, pricing) {
 
 module.exports = function register(router) {
   router.get('/api/cost/usage', (runtime, req, res, { url }) => {
-    const input = url.searchParams.get('days')?.trim();
-    const days = /^-?\d+$/.test(input || '') ? Math.min(365, Math.max(1, Number(input))) : 7;
+    const range = parseRange(url);
     const { dataDir } = runtime.config.paths;
     const pricing = readPricing(dataDir, runtime.logger);
-    return json(res, 200, { ok: true, days, ...summarize(dataDir, days, pricing), pricing });
+    return json(res, 200, { ok: true, days: range.days, from: range.from, to: range.to, ...summarize(dataDir, range, pricing), pricing });
   });
 };

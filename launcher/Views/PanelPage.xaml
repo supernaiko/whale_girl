@@ -33,6 +33,10 @@
                        Margin="14,0,0,0" VerticalAlignment="Center" Text="—" />
             <Button DockPanel.Dock="Right" x:Name="BtnRefresh" Content="⟳ 刷新" Style="{StaticResource Ghost}"
                     HorizontalAlignment="Right" Click="OnRefreshClick" />
+            <DatePicker x:Name="FromPicker" DockPanel.Dock="Right" Width="118" Margin="0,0,6,0" />
+            <DatePicker x:Name="ToPicker" DockPanel.Dock="Right" Width="118" Margin="0,0,6,0" />
+            <Button DockPanel.Dock="Right" Content="应用" Style="{StaticResource Ghost}"
+                    HorizontalAlignment="Right" Margin="0,0,6,0" Click="OnApplyRange" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,0,10,0">
                 <Button Content="7 天" Tag="7" Style="{StaticResource Ghost}" Margin="0,0,6,0" Click="OnInsightRange" />
                 <Button Content="30 天" Tag="30" Style="{StaticResource Ghost}" Margin="0,0,6,0" Click="OnInsightRange" />
