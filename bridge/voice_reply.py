@@ -15,7 +15,7 @@ _health = {}  # Per installation, in memory only. Never stores text or credentia
 def synth_timeout(config):
     try:
         value = float(config.get("SynthTimeoutSec", 85))
-        return max(5.0, min(90.0, value)) if math.isfinite(value) else 85.0
+        return max(5.0, min(150.0, value)) if math.isfinite(value) else 85.0
     except (TypeError, ValueError):
         return 85.0
 
@@ -80,6 +80,18 @@ def choose(config, incoming, is_group, rng, log=None):
         return decision(False, 'probability_disabled_or_invalid')
     selected = rng() < chance / 100
     return decision(selected, 'probability_hit' if selected else 'probability_miss')
+
+def spoken_text(bubbles, limit=90):
+    text = ' '.join(str(line).strip() for line in (bubbles or []) if str(line).strip())
+    text = re.sub(r'\[\[sticker:[^\]]{1,20}\]\]', '', text).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    for sep in ('。', '！', '？', '，', '.', '!', '?', ',', '…'):
+        i = cut.rfind(sep)
+        if i >= limit * 0.5:
+            return cut[:i + 1]
+    return cut
 
 def deliver(root, text, hwnd, prepare, log, allow_foreground=None, cancelled=None, outcome=None, send_lock=None):
     """Synthesize first; only touch WeChat once the worker reports ready.
