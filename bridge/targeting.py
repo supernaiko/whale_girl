@@ -60,6 +60,43 @@ def _hotkey(hwnd, key, control=False):
     return True
 
 
+def _restore_from_taskbar(name_hint="Weixin.exe"):
+    """Click the WeChat taskbar button, the same way a user would, so Qt repaints properly."""
+    try:
+        import uiautomation as auto
+
+        auto.SetGlobalSearchTimeout(0.8)
+        task = auto.PaneControl(searchDepth=1, ClassName="Shell_TrayWnd")
+        if not task.Exists(0.3):
+            return False
+
+        def walk(root, depth=0):
+            if depth > 8:
+                return
+            try:
+                children = root.GetChildren()
+            except Exception:
+                return
+            for child in children:
+                yield child
+                for sub in walk(child, depth + 1):
+                    yield sub
+
+        for ctrl in walk(task):
+            try:
+                if ctrl.ControlTypeName != "ButtonControl":
+                    continue
+                ident = (ctrl.AutomationId or "") + " " + (ctrl.Name or "")
+                if name_hint.lower() in ident.lower() or "微信" in ident:
+                    ctrl.Click()
+                    return True
+            except Exception:
+                continue
+    except Exception:
+        return False
+    return False
+
+
 def _last_active_popup(hwnd):
     """pywin32 不是每个版本都有 GetLastActivePopup，走 user32 兜底。"""
     try:
@@ -173,7 +210,14 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
             detail = 'foreground_unavailable'
             _dismiss_popup(hwnd)
             if win32gui.IsIconic(hwnd):
-                win32gui.ShowWindow(hwnd, 9)   # SW_RESTORE：最小化时 UIA 树是空的
+                # 先像人一样点任务栏按钮恢复，微信自己会重绘；直接 SW_RESTORE 会白屏。
+                if _restore_from_taskbar():
+                    for _ in range(10):
+                        if not win32gui.IsIconic(hwnd):
+                            break
+                        time.sleep(0.12)
+                if win32gui.IsIconic(hwnd):
+                    win32gui.ShowWindow(hwnd, 9)   # SW_RESTORE：最小化时 UIA 树是空的
                 # 微信恢复后要过一会儿才重绘，抢在前台时立刻打字会撞上白屏/空树。
                 time.sleep(0.45)
                 for _ in range(12):
