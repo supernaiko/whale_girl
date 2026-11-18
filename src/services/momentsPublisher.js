@@ -553,10 +553,13 @@ class MomentsPublisher {
     if (!settingsCodexPaint(this.settings())) return '';
     let reference = '';
     try { reference = (this.selfImages() || [])[0] || ''; } catch { /* ignore */ }
+    const settings = this.settings();
+    const view = settings.preferNoPerson && !/出去玩|旅行|景点|海边|爬山|逛街|打卡/.test(sceneText) ? 'firstPerson' : 'auto';
     const file = await momentsPaint.paint({
       dataDir: path.join(this.root, 'data'),
       scene: sceneText,
       reference,
+      view,
       logger: this.logger,
     });
     return file || '';

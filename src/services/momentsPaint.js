@@ -13,14 +13,14 @@ function characterCard(dataDir) {
   } catch { return null; }
 }
 
-async function paint({ dataDir, scene, frontView = false, reference = '', logger } = {}) {
+async function paint({ dataDir, scene, frontView = false, reference = '', view = 'auto', logger } = {}) {
   if (!dataDir || !scene) return '';
   if (!momentsCodex.available || !momentsCodex.available()) return '';
   const dir = path.join(dataDir, 'moments', 'paint');
   const file = path.join(dir, 'paint-' + Date.now() + '.png');
   try {
     const got = await momentsCodex.generateImage({
-      scene, character: characterCard(dataDir), outFile: file, frontView, reference,
+      scene, character: characterCard(dataDir), outFile: file, frontView, reference, view,
     });
     if (got && got.file) { logger?.info?.('[moments] paint ok ms=' + got.ms); return got.file; }
   } catch (error) { logger?.warn?.('[moments] paint error: ' + error.message); }

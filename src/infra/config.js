@@ -217,7 +217,7 @@ const DEFAULT_CONFIG = {
     activeStart: '08:00', activeEnd: '23:30', minGapHours: 3, attemptProbability: 0.25, muteDate: '',
     publishAccount: '', publishWithImage: false,
     // 朋友圈文案谁写：deepseek（默认）或 codex（本机 Codex 挑图+写文案，失败自动回落）
-    writer: 'deepseek', imageSource: 'weibo',
+    writer: 'deepseek', imageSource: 'weibo', preferNoPerson: true, allowRepeat: true,
   },
   // 别人发链接时，读一下标题/摘要/文章正文（视频只读得到文案）
   links: { enabled: true, timeoutMs: 6000, cacheMinutes: 60, allowPrivate: false },
