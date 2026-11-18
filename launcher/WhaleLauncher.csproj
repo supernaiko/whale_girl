@@ -33,6 +33,7 @@
   <!-- 图标同时当资源：MainWindow 的 Icon="Assets/app.ico" 走 pack URI 读这个 -->
   <ItemGroup>
     <PackageReference Include="NAudio" Version="2.2.1" />
+    <PackageReference Include="System.Speech" Version="9.0.0" />
     <Resource Include="Assets\app.ico" />
     <EmbeddedResource Include="..\docs\插件市场规范.md" LogicalName="WhaleLauncher.PluginRulesGuide.md" />
     <EmbeddedResource Include="..\docs\插件免责声明.md" LogicalName="WhaleLauncher.PluginDisclaimer.md" />

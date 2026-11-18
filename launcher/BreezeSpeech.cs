@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Speech.Synthesis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -109,6 +110,7 @@ public static class BreezeSpeech
         public long RequestMs { get; set; }
         public long? HeadersMs { get; set; }
         public int? HttpStatus { get; set; }
+        public bool LocalFallback { get; set; }
     }
 
     public static async Task Generate(string key, string model, string voice, string text, string instructions, string file, CancellationToken ct,
@@ -139,9 +141,39 @@ public static class BreezeSpeech
         }
         VoiceSendEngine.ValidateWave(file);
         }
-        catch (OperationCanceledException) when (!caller.IsCancellationRequested)
-        { throw new TimeoutException("BreezeBlue 语音合成超时，尚未开始微信录音"); }
+        catch (Exception ex)
+        {
+            if (caller.IsCancellationRequested) throw;
+            try
+            {
+                if (File.Exists(file)) File.Delete(file);
+                LocalGenerate(text, file);
+                VoiceSendEngine.ValidateWave(file);
+                metrics.LocalFallback = true;
+                metrics.HttpStatus = null;
+            }
+            catch
+            {
+                if (ex is OperationCanceledException) throw new TimeoutException("BreezeBlue 语音合成超时，尚未开始微信录音");
+                throw;
+            }
+        }
         finally { metrics.RequestMs = clock.ElapsedMilliseconds; }
+    }
+
+    // BreezeBlue 不可用时的离线兜底：用 Windows 自带的中文语音（Huihui）合成 wav。
+    // 质量不如云端，但保证「语音这条路」不会因为 Key 失效/网络问题彻底断掉。
+    public static void LocalGenerate(string text, string file, bool soft = true)
+    {
+        using var synth = new SpeechSynthesizer();
+        var zh = synth.GetInstalledVoices()
+            .FirstOrDefault(v => v.Enabled && v.VoiceInfo.Culture.Name.StartsWith("zh", StringComparison.OrdinalIgnoreCase));
+        if (zh != null) synth.SelectVoice(zh.VoiceInfo.Name);
+        synth.Rate = soft ? -2 : 0;
+        synth.Volume = soft ? 85 : 100;
+        synth.SetOutputToWaveFile(file);
+        try { synth.Speak(text); }
+        finally { synth.SetOutputToNull(); }
     }
 
     public static async Task<Choice[]> Catalog(string key, bool voices, string search, CancellationToken ct)
