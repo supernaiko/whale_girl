@@ -74,8 +74,57 @@ def _steal_foreground(hwnd):
     return win32gui.GetForegroundWindow() == hwnd
 
 
+def _bring_to_front(hwnd):
+    """Upstream strategy: clear the foreground lock, topmost, attach, activate; then undo."""
+    import ctypes
+    import time
+
+    import win32gui
+
+    user32 = ctypes.windll.user32
+    SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW = 0x2, 0x1, 0x40
+    SPI_GETFOREGROUNDLOCKTIMEOUT, SPI_SETFOREGROUNDLOCKTIMEOUT = 0x2000, 0x2001
+    prev_lock = ctypes.c_uint32(0)
+    got_lock = user32.SystemParametersInfoW(
+        SPI_GETFOREGROUNDLOCKTIMEOUT, 0, ctypes.byref(prev_lock), 0)
+    user32.SystemParametersInfoW(SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(0), 0)
+    try:
+        for _ in range(3):
+            if win32gui.GetForegroundWindow() == hwnd:
+                break
+            fg = win32gui.GetForegroundWindow()
+            tid_fg = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+            tid_t = user32.GetWindowThreadProcessId(hwnd, None)
+            attached = False
+            if tid_fg and tid_fg != tid_t:
+                try:
+                    user32.AttachThreadInput(tid_fg, tid_t, True)
+                    attached = True
+                except Exception:
+                    attached = False
+            try:
+                user32.SetWindowPos(hwnd, ctypes.c_void_p(-1), 0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetActiveWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+            finally:
+                if attached:
+                    try:
+                        user32.AttachThreadInput(tid_fg, tid_t, False)
+                    except Exception:
+                        pass
+            time.sleep(0.25)
+        user32.SetWindowPos(hwnd, ctypes.c_void_p(-2), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+    finally:
+        if got_lock:
+            user32.SystemParametersInfoW(
+                SPI_SETFOREGROUNDLOCKTIMEOUT, 0, ctypes.c_void_p(prev_lock.value), 0)
+    return win32gui.GetForegroundWindow() == hwnd
+
+
 def activate_target(hwnd):
-    """发送路径恢复前台：只做非阻塞激活，绝不合并输入队列（会卡死微信 UI 线程）。"""
+    """发送路径恢复前台：先像人一样恢复窗口，再走上游的置顶+挂接前台线程激活。"""
     import time
 
     import win32gui
@@ -84,7 +133,6 @@ def activate_target(hwnd):
         return False
     try:
         if win32gui.IsIconic(hwnd):
-            # 点任务栏按钮让微信自己恢复重绘，直接 SW_RESTORE 会白屏。
             try:
                 from targeting import _restore_from_taskbar
             except Exception:
@@ -100,33 +148,19 @@ def activate_target(hwnd):
             time.sleep(0.15)
         if win32gui.GetForegroundWindow() == hwnd:
             return True
-        for _ in range(2):
-            try:
-                unlock_foreground()
-                win32gui.SetForegroundWindow(hwnd)
-            except Exception:
-                pass
-            time.sleep(0.12)
-            if win32gui.GetForegroundWindow() == hwnd:
-                return True
+        return _bring_to_front(hwnd)
     except Exception:
         return False
-    return win32gui.GetForegroundWindow() == hwnd
 
 
 def install():
     from wechatauto.guia import WeChatGUI
     from wechatauto.uia_driver import WeChatUIA
 
-    def bring_to_front(self, keep_topmost=False):
-        # 不能为抢焦点改全机前台锁，也不能把两个账号的输入线程绑在一起。
-        return activate(self.main_hwnd)
-
-    WeChatGUI.bring_to_front = bring_to_front
-    WeChatUIA._force_foreground = staticmethod(activate)
+    # 上游 bring_to_front 自己会做 HWND_TOPMOST + AttachThreadInput + SetForegroundWindow，
+    # 比我们之前的简化实现可靠；这里不再覆盖它，只兜住控件级 _activate 的旧同步路径。
 
     def activate_control(self, win):
-        # 原来的 _activate 在失败后还会同步 ShowWindow/SetActive，不能再落回旧路径。
         return activate(win.NativeWindowHandle)
 
     WeChatUIA._activate = activate_control
