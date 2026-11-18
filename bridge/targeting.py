@@ -175,106 +175,67 @@ def _recent(uia, hwnd, names, aliases, ready):
 
 def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
                         refresh_aliases=None, log=None):
-    """调用方持有发送锁和 GUI 锁；最多三轮，返回 (hwnd, uia)。
-
-    每轮通过原账号闸重新认窗；枚举结果只能选已验证账号的句柄，绝不按标题猜账号。
-    重试只覆盖导航，发送及可能残留草稿后的处理仍由原发送事务负责。
-    """
+    """把窗口拉到前台，切到目标会话并核对。与上游 sticker 通道同策略，不再自定义三轮导航。"""
     import win32gui
-    import win32process
 
-    steps = (('search', _search), ('list', _list), ('recent', _recent))
-    for round_no in range(1, 4):
-        hwnd, focus, reason, detail = 0, 0, 'TargetUnavailable', 'not_ready'
-        reported = False
-        try:
-            if not gate():
-                raise TargetUnavailable()
-            account = runtime.ACCOUNT
-            hwnd = int(account.get('hwnd') or 0)
-            detail = 'window_not_found'
-            candidates = main_window_candidates(hwnd)
-            pid = int(account.get('pid') or 0)
-            if not account.get('verified') or not any(
-                    h == hwnd and (not pid or p == pid) for h, p in candidates):
-                raise TargetUnavailable()
-
-            def valid_account():
-                return (bool(runtime.ACCOUNT.get('verified'))
-                        and int(runtime.ACCOUNT.get('hwnd') or 0) == hwnd
-                        and (not pid or win32process.GetWindowThreadProcessId(hwnd)[1] == pid)
-                        and (account_valid is None or account_valid(hwnd)))
-
-            if not valid_account():
-                raise TargetUnavailable()
-            detail = 'foreground_unavailable'
-            _dismiss_popup(hwnd)
-            if win32gui.IsIconic(hwnd) or not win32gui.IsWindowVisible(hwnd):
-                # 只走“像人一样恢复”，绝不同步 ShowWindow，避免微信白屏卡死。
+    hwnd = int(runtime.ACCOUNT.get('hwnd') or 0) or runtime.find_weixin_hwnd()
+    if not hwnd:
+        raise TargetUnavailable()
+    for round_no in (1, 2, 3):
+        if not gate():
+            raise TargetUnavailable()
+        # 1) 前台
+        if win32gui.GetForegroundWindow() != hwnd:
+            if not activate_target(hwnd):
+                _dismiss_popup(hwnd)
                 if not activate_target(hwnd):
                     raise TargetUnavailable()
-                for _ in range(12):
-                    if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
-                        break
-                    time.sleep(0.15)
-
-            activated = activate_target(hwnd)
-            focus = win32gui.GetForegroundWindow()
-            if focus != hwnd:
-                # 恢复主窗后 Windows 可能先把其模态窗带到前台，此时才能取消它。
-                _dismiss_popup(hwnd)
-                activated = activate_target(hwnd)
-                focus = win32gui.GetForegroundWindow()
-            if not activated or focus != hwnd or not gate() or not valid_account():
-                raise TargetUnavailable()
-            # 搜索浮层和菜单可能共用主窗句柄，Esc 只取消浮层，不确认任何操作。
-            _hotkey(hwnd, 0x1B)
-            gui = runtime.gui
-            detail = 'uia_unavailable'
-            if gui is None or not gui.use_window(hwnd) or int(gui.main_hwnd) != hwnd:
-                raise TargetUnavailable()
-            uia = gui._get_uia(refresh=round_no > 1)
-            if (uia is None or int(getattr(uia, 'hwnd', 0) or 0) not in (0, hwnd)
-                    or int(getattr(getattr(uia, '_win', None), 'NativeWindowHandle', 0) or 0) != hwnd):
-                raise TargetUnavailable()
-            current_aliases = set(refresh_aliases() if refresh_aliases else aliases)
-            names = [name for name in dict.fromkeys([shown, *sorted(current_aliases)])
-                     if name in current_aliases and name and not re.fullmatch(
-                         r'(?:wxid_[A-Za-z0-9_-]+|[A-Za-z0-9_-]+@chatroom)', name, re.I)]
-
-            def ready():
-                return (gate() and valid_account() and int(gui.main_hwnd) == hwnd
-                        and win32gui.GetForegroundWindow() == hwnd)
-
-            if (_verified(uia, current_aliases, ready)):
-                return hwnd, uia
-            for step, navigate in steps:
-                reason = 'not_verified'
+            for _ in range(12):
+                if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
+                    break
+                time.sleep(0.15)
+        _dismiss_popup(hwnd)
+        if account_valid is not None and not account_valid(hwnd):
+            raise TargetUnavailable()
+        gui = runtime.gui
+        if gui is None or not gui.use_window(hwnd):
+            raise TargetUnavailable()
+        uia = gui._get_uia(refresh=round_no > 1)
+        if uia is None:
+            raise TargetUnavailable()
+        current_aliases = set(refresh_aliases() if refresh_aliases else aliases)
+        cur = None
+        try:
+            cur = uia.current_chat()
+        except Exception:
+            cur = None
+        if cur and file_alias_match(cur, current_aliases):
+            runtime.UIA_CACHE['u'] = uia
+            return hwnd, uia
+        # 2) 打开会话（wechatauto 内建搜索+点开+回读，兼容没有 _session_rows_of 的版本）
+        keys = [name for name in dict.fromkeys([shown, *sorted(current_aliases)]) if name]
+        opened = False
+        try:
+            opened = bool(uia.open_chat(keys))
+        except Exception:
+            opened = False
+        if not opened:
+            for name in keys:
                 try:
-                    ok = navigate(uia, hwnd, names, current_aliases, ready)
-                    ok = bool(ok and _verified(uia, current_aliases, ready))
-                except Exception as exc:
-                    ok, reason = False, type(exc).__name__
-                focus = win32gui.GetForegroundWindow()
-                if log:
-                    log('[target] round=%d hwnd=%d focus=%d step=%s %s type=%s'
-                        ' code=%s status=0 detail=%s'
-                        % (round_no, hwnd, focus, step, 'ok' if ok else 'fail', reason if not ok else 'none',
-                           'target_not_verified' if not ok else 'none', 'title_or_navigation' if not ok else 'verified'))
-                reported = True
-                if ok:
-                    return hwnd, uia
-        except Exception as exc:
-            reason = type(exc).__name__
+                    if uia.open_chat(name):
+                        opened = True
+                        break
+                except Exception:
+                    continue
+        if opened:
             try:
-                focus = win32gui.GetForegroundWindow()
+                now_cur = uia.current_chat()
             except Exception:
-                pass
-        if not reported and log:
-            for step, _ in steps:
-                log('[target] round=%d hwnd=%d focus=%d step=%s fail type=%s'
-                    ' code=target_unavailable status=0 detail=%s'
-                    % (round_no, hwnd, focus, step, reason, detail))
-        if round_no < 3:
-            time.sleep(0.4)
+                now_cur = None
+            if now_cur and file_alias_match(now_cur, current_aliases):
+                runtime.UIA_CACHE['u'] = uia
+                return hwnd, uia
+        if log:
+            log('[target] round=%d opened=%s cur=%r' % (round_no, opened, cur))
+        time.sleep(0.3)
     raise TargetUnavailable()
