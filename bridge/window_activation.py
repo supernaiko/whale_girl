@@ -75,22 +75,42 @@ def _steal_foreground(hwnd):
 
 
 def activate_target(hwnd):
-    """发送路径显式恢复前台；后台探测仍使用原来的异步激活。"""
+    """发送路径恢复前台：只做非阻塞激活，绝不合并输入队列（会卡死微信 UI 线程）。"""
+    import time
+
     import win32gui
 
     if not hwnd or not win32gui.IsWindow(hwnd):
         return False
-    win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE
-    if win32gui.GetForegroundWindow() != hwnd:
-        try:
-            _steal_foreground(hwnd)
-        except Exception:
-            # 前台线程可能在取句柄后退出，仍尝试普通激活并以回读为准。
-            pass
-        try:
-            win32gui.SetForegroundWindow(hwnd)
-        except Exception:
-            pass
+    try:
+        if win32gui.IsIconic(hwnd):
+            # 点任务栏按钮让微信自己恢复重绘，直接 SW_RESTORE 会白屏。
+            try:
+                from targeting import _restore_from_taskbar
+            except Exception:
+                return False
+            if not _restore_from_taskbar():
+                return False
+            for _ in range(10):
+                if not win32gui.IsIconic(hwnd):
+                    break
+                time.sleep(0.12)
+        elif not win32gui.IsWindowVisible(hwnd):
+            win32gui.ShowWindowAsync(hwnd, 4)
+            time.sleep(0.15)
+        if win32gui.GetForegroundWindow() == hwnd:
+            return True
+        for _ in range(2):
+            try:
+                unlock_foreground()
+                win32gui.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+            time.sleep(0.12)
+            if win32gui.GetForegroundWindow() == hwnd:
+                return True
+    except Exception:
+        return False
     return win32gui.GetForegroundWindow() == hwnd
 
 

@@ -209,19 +209,12 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
                 raise TargetUnavailable()
             detail = 'foreground_unavailable'
             _dismiss_popup(hwnd)
-            if win32gui.IsIconic(hwnd):
-                # 先像人一样点任务栏按钮恢复，微信自己会重绘；直接 SW_RESTORE 会白屏。
-                if _restore_from_taskbar():
-                    for _ in range(10):
-                        if not win32gui.IsIconic(hwnd):
-                            break
-                        time.sleep(0.12)
-                if win32gui.IsIconic(hwnd):
-                    win32gui.ShowWindow(hwnd, 9)   # SW_RESTORE：最小化时 UIA 树是空的
-                # 微信恢复后要过一会儿才重绘，抢在前台时立刻打字会撞上白屏/空树。
-                time.sleep(0.45)
+            if win32gui.IsIconic(hwnd) or not win32gui.IsWindowVisible(hwnd):
+                # 只走“像人一样恢复”，绝不同步 ShowWindow，避免微信白屏卡死。
+                if not activate_target(hwnd):
+                    raise TargetUnavailable()
                 for _ in range(12):
-                    if int(getattr(runtime.gui, 'main_hwnd', 0) or 0) == hwnd and win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
+                    if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
                         break
                     time.sleep(0.15)
 
