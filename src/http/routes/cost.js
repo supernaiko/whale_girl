@@ -3,45 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { describeError } = require('../../infra/errors');
-const { inWindows, minutesOfDay, parseClock } = require('../../infra/time');
+const { DEFAULT_PRICING, normalizePricing, usagePricer } = require('../../stats/pricing');
 const { json } = require('../util');
-
-const DEFAULT_PRICING = {
-  currency: 'CNY',
-  models: {
-    flash: {
-      offPeak: { cacheHitPerM: 0.02, cacheMissPerM: 1, outputPerM: 4 },
-      peak: { cacheHitPerM: 0.04, cacheMissPerM: 2, outputPerM: 8 },
-    },
-  },
-  offPeakWindow: { start: '00:30', end: '08:30' },
-};
-
-// 在 models 下显式添加 pro 才启用，缺项按任务给出的示例单价补齐。
-const PRO_PRICING = {
-  offPeak: { cacheHitPerM: 0.10, cacheMissPerM: 4, outputPerM: 16 },
-  peak: { cacheHitPerM: 0.20, cacheMissPerM: 8, outputPerM: 32 },
-};
-const BEIJING = 'Asia/Shanghai';
 
 function parseJson(text) {
   try { return JSON.parse(text); } catch { return null; }
-}
-
-function nonnegative(value, fallback = 0) {
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
-}
-
-function modelPricing(saved, defaults) {
-  return Object.fromEntries(Object.entries(defaults).map(([band, rates]) => [band, {
-    cacheHitPerM: nonnegative(saved?.[band]?.cacheHitPerM, rates.cacheHitPerM),
-    cacheMissPerM: nonnegative(saved?.[band]?.cacheMissPerM, rates.cacheMissPerM),
-    outputPerM: nonnegative(saved?.[band]?.outputPerM, rates.outputPerM),
-  }]));
-}
-
-function validClock(value, fallback) {
-  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value) && parseClock(value) !== null ? value : fallback;
 }
 
 function readPricing(dataDir, logger) {
@@ -61,19 +27,12 @@ function readPricing(dataDir, logger) {
       }
     }
   }
-  const models = { flash: modelPricing(saved?.models?.flash, DEFAULT_PRICING.models.flash) };
-  const pro = saved?.models?.pro;
-  if (pro && typeof pro === 'object' && !Array.isArray(pro)) models.pro = modelPricing(pro, PRO_PRICING);
-  const defaults = DEFAULT_PRICING.offPeakWindow;
-  const start = validClock(saved?.offPeakWindow?.start, defaults.start);
-  const end = validClock(saved?.offPeakWindow?.end, defaults.end);
+  const pricing = normalizePricing(saved);
   return {
-    currency: DEFAULT_PRICING.currency,
-    models,
-    offPeakWindow: start === end ? defaults : { start, end },
+    ...pricing,
     // 旧启动器用这两个字段折算 Codex，兼容返回直接使用人民币高峰价。
     rate: 1,
-    deepseek: models.flash.peak,
+    deepseek: pricing.models.flash.peak,
   };
 }
 
@@ -97,7 +56,7 @@ function summarize(dataDir, days, pricing) {
   const total = emptyUsage();
   const bands = { peak: emptyUsage(), offPeak: emptyUsage() };
   const buckets = new Map();
-  const windows = [{ start: parseClock(pricing.offPeakWindow.start), end: parseClock(pricing.offPeakWindow.end) }];
+  const price = usagePricer(pricing);
 
   // 两个日志都很小，同步读取可以避免轮转夹在两次读取之间，导致同一份用量被算两遍。
   for (const file of ['usage.1.jsonl', 'usage.jsonl']) {
@@ -117,13 +76,7 @@ function summarize(dataDir, days, pricing) {
       const date = localDate(at);
       if (!buckets.has(date)) buckets.set(date, { usage: emptyUsage(), costs: { peak: 0, offPeak: 0 } });
       const day = buckets.get(date);
-      const band = inWindows(minutesOfDay(at.getTime(), BEIJING), windows) ? 'offPeak' : 'peak';
-      const model = item.model === 'deepseek-v4-pro' && pricing.models.pro ? pricing.models.pro : pricing.models.flash;
-      const { cacheHitPerM, cacheMissPerM, outputPerM } = model[band];
-      const prompt = nonnegative(item.prompt);
-      const cached = Math.min(prompt, nonnegative(item.cached));
-      const completion = nonnegative(item.completion);
-      const costCny = (cached * cacheHitPerM + (prompt - cached) * cacheMissPerM + completion * outputPerM) / 1e6;
+      const { band, prompt, cached, completion, costCny } = price(item, at.getTime());
       day.costs[band] += costCny;
       bands[band].costCny += costCny;
       for (const usage of [day.usage, total, bands[band]]) {

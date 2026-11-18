@@ -57,6 +57,7 @@ namespace WhaleLauncher
             new NavEntry { Key = "Codex 日志", Label = "Codex 日志", Icon = Geometry.Parse("M6 3h9l4 4v14H6z M15 3v4h4 M9 12h7 M9 16h7") },
             new NavEntry { Key = "调试台", Label = "调试台", Icon = Geometry.Parse("M4 5h16v14H4z M8 9l3 3-3 3 M13 15h3") },
             new NavEntry { Key = "花销", Label = "花销", Icon = Geometry.Parse("M4 6h16v13H4z M4 9h16 M14 14h3") },
+            new NavEntry { Key = "统计", Label = "统计", Icon = Geometry.Parse("M4 20h16 M6 17v-6 M12 17V5 M18 17V8") },
             new NavEntry { Key = "备份", Label = "备份与迁移", Icon = Geometry.Parse("M4 7h16v10H4z M9 7V4h6v3 M9 17v3h6v-3") },
             new NavEntry { Key = "设置", Label = "设置", Icon = Geometry.Parse("M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.56 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.12.4.5.86 1.56 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1Z") },
         };
@@ -565,6 +566,7 @@ namespace WhaleLauncher
                 case "Codex 日志": return new CodexLogPage(_sup);
                 case "调试台": return new DebugPage(_sup);
                 case "花销": return new CostPage(_sup);
+                case "统计": return new StatsPage(_sup);
                 default:
                     return new PlaceholderPage(key, "这一页还没做。");
             }

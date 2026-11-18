@@ -12,6 +12,7 @@ const modules = [
   require('./config'),
   require('./debug'),
   require('./cost'),
+  require('./stats'),
   require('./care'),
   require('./chat'),
   require('./bridge'),
