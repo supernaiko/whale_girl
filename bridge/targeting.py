@@ -174,7 +174,12 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
             _dismiss_popup(hwnd)
             if win32gui.IsIconic(hwnd):
                 win32gui.ShowWindow(hwnd, 9)   # SW_RESTORE：最小化时 UIA 树是空的
+                # 微信恢复后要过一会儿才重绘，抢在前台时立刻打字会撞上白屏/空树。
                 time.sleep(0.45)
+                for _ in range(12):
+                    if int(getattr(runtime.gui, 'main_hwnd', 0) or 0) == hwnd and win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
+                        break
+                    time.sleep(0.15)
 
             activated = activate_target(hwnd)
             focus = win32gui.GetForegroundWindow()
@@ -204,6 +209,8 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
                 return (gate() and valid_account() and int(gui.main_hwnd) == hwnd
                         and win32gui.GetForegroundWindow() == hwnd)
 
+            if (_verified(uia, current_aliases, ready)):
+                return hwnd, uia
             for step, navigate in steps:
                 reason = 'not_verified'
                 try:
