@@ -39,6 +39,9 @@ namespace WhaleLauncher.Views
             Unloaded += (_, __) => _timer.Stop();
         }
 
+        // 嵌进「数据面板」的页签时不再重复大标题。
+        internal void Embed() => TitleBlock.Visibility = Visibility.Collapsed;
+
         // 主窗也会轮询当前页，避免两秒一次重新扫描日志。
         public Task RefreshAsync() => !_timer.IsEnabled || Environment.TickCount64 < _nextRefresh
             ? Task.CompletedTask : LoadOverviewAsync();
@@ -75,7 +78,19 @@ namespace WhaleLauncher.Views
             await LoadOverviewAsync();
         }
 
-        private async void OnRefresh(object sender, RoutedEventArgs e) => await LoadOverviewAsync();
+        private async void OnRefresh(object sender, RoutedEventArgs e)
+        {
+            // 刷新回到默认七天，避免一直卡在上次自定义的区间。
+            _from = _to = "";
+            if (_days != 7)
+            {
+                _days = 7;
+                foreach (var option in new[] { TodayButton, WeekButton, MonthButton, YearButton })
+                    option.SetResourceReference(StyleProperty, "Ghost");
+                WeekButton.SetResourceReference(StyleProperty, "Primary");
+            }
+            await LoadOverviewAsync();
+        }
 
         private async Task LoadOverviewAsync()
         {

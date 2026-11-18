@@ -25,7 +25,7 @@
                 <Button x:Name="BtnRefresh" Content="⟳ 刷新" Style="{StaticResource Ghost}"
                         Margin="14,0,0,0" Click="OnRefresh" />
             </StackPanel>
-            <TextBlock DockPanel.Dock="Left" Text="统计" Style="{StaticResource H1}" VerticalAlignment="Center" />
+            <TextBlock x:Name="TitleBlock" DockPanel.Dock="Left" Text="统计" Style="{StaticResource H1}" VerticalAlignment="Center" />
             <TextBlock x:Name="UpdatedText" DockPanel.Dock="Left" Text="—" Style="{StaticResource Small}"
                        Foreground="{StaticResource Muted}" Margin="14,0,0,0" VerticalAlignment="Center" />
         </DockPanel>
