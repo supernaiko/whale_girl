@@ -1,0 +1,15 @@
+{
+  "Id": "yxn-chat",
+  "Name": "本地回话",
+  "Author": "本地插件",
+  "Version": "1.0.0",
+  "MinAppVersion": "4.1.2",
+  "Description": "从本地素材抽取轻量回复，支持加权采样、拟人延迟和整目录迁移。",
+  "ResultLabel": "结果",
+  "Api": 4,
+  "Kind": "message",
+  "Hooks": ["chat.pre_reply", "chat.generate", "app.start", "timer.tick"],
+  "Permissions": ["system.full"],
+  "ExecutionTimeoutMs": 60000,
+  "IntervalSeconds": 300
+}
