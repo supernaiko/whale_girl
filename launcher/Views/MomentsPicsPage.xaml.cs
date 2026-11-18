@@ -148,6 +148,52 @@ namespace WhaleLauncher.Views
             }
         }
 
+
+        string paintFile = "";
+
+        async void OnPaint(object sender, RoutedEventArgs e)
+        {
+            var scene = (PaintScene.Text ?? "").Trim();
+            if (scene.Length == 0) { PaintStatus.Text = "先写一句场景"; return; }
+            BtnPaint.IsEnabled = false;
+            PaintStatus.Text = "Codex 出图中…（40~90 秒）";
+            try
+            {
+                var body = JsonSerializer.Serialize(new { scene });
+                var res = await Api.Post(sup.Url, "/api/moments/pics/paint", body, 300);
+                if (res == null || !res.Bool("ok"))
+                {
+                    PaintStatus.Text = "出图失败：" + (res == null ? "无响应" : (res.Str("error") != "" ? res.Str("error") : "HTTP " + res.StatusCode));
+                    return;
+                }
+                PaintPreview.Source = DecodeDataUrl(res.Str("image"));
+                paintFile = res.Str("file");
+                BtnUsePaint.IsEnabled = paintFile.Length > 0;
+                PaintStatus.Text = "✓ 用时 " + (res.Long("elapsedMs") / 1000) + " 秒";
+            }
+            catch (Exception ex) { PaintStatus.Text = "出错：" + ex.Message; }
+            finally { BtnPaint.IsEnabled = true; }
+        }
+
+        async void OnUsePaint(object sender, RoutedEventArgs e)
+        {
+            if (paintFile.Length == 0) return;
+            BtnUsePaint.IsEnabled = false;
+            try
+            {
+                var body = JsonSerializer.Serialize(new { path = paintFile });
+                var res = await Api.Post(sup.Url, "/api/moments/pics/self/add", body, 15);
+                if (res != null && res.Bool("ok"))
+                {
+                    PaintStatus.Text = "已加入本人图池";
+                    await LoadAsync();
+                }
+                else PaintStatus.Text = "加入失败：" + (res == null ? "无响应" : res.Str("error"));
+            }
+            catch (Exception ex) { PaintStatus.Text = "出错：" + ex.Message; }
+            finally { BtnUsePaint.IsEnabled = true; }
+        }
+
         async void OnSave(object sender, RoutedEventArgs e)
         {
             try

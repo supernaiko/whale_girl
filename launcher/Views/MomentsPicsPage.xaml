@@ -90,6 +90,22 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <Border Background="{StaticResource Surface3}" CornerRadius="8" Padding="12" Margin="0,6,0,0">
+                    <StackPanel>
+                        <TextBlock Text="按场景让 Codex 出一张（固定人物，慢，40~90 秒）" Style="{StaticResource Label}" />
+                        <TextBox x:Name="PaintScene" Margin="0,8,0,0" MinHeight="54" TextWrapping="Wrap" AcceptsReturn="True"
+                                 Text="一个人在家煮了碗面，坐在小桌前吃，窗外在下雨" />
+                        <DockPanel Margin="0,8,0,0" LastChildFill="False">
+                            <Button x:Name="BtnPaint" Content="✎ 出图" Style="{StaticResource Primary}" Click="OnPaint" />
+                            <Button x:Name="BtnUsePaint" Content="加入本人图池" Style="{StaticResource Ghost}" Margin="8,0,0,0" IsEnabled="False" Click="OnUsePaint" />
+                            <TextBlock x:Name="PaintStatus" Style="{StaticResource Small}" Margin="12,0,0,0" VerticalAlignment="Center" Text="" />
+                        </DockPanel>
+                        <Border Background="{StaticResource Surface3}" CornerRadius="8" Margin="0,10,0,0" Padding="6" HorizontalAlignment="Left">
+                            <Image x:Name="PaintPreview" Width="240" Height="320" Stretch="Uniform" />
+                        </Border>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </Border>
 

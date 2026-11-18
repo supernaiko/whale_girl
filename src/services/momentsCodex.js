@@ -121,4 +121,63 @@ function choose(input = {}) {
   });
 }
 
-module.exports = { available, choose, parseResult, buildPrompt, codexEntry };
+
+/**
+ * 让 Codex 自己画一张图存到 outFile。
+ * 用于「固定人物 + 每天场景」的出图：人物长相由角色卡固定，场景由文案决定。
+ * 成功返回 { file, ms, raw }，失败返回 null。
+ */
+function generateImage({ scene, character, outFile, timeoutMs }) {
+  return new Promise((resolve) => {
+    if (!available() || !outFile) return resolve(null);
+    const dir = path.dirname(outFile);
+    try { fs.mkdirSync(dir, { recursive: true }); } catch { return resolve(null); }
+    try { fs.rmSync(outFile, { force: true }); } catch { /* ignore */ }
+    const who = character && character.look ? character.look : '一个二十多岁的女生，长发，身材偏瘦，日常穿宽松卫衣和牛仔裤';
+    const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
+    const prompt = [
+      '用你的图像生成工具画一张照片，并保存到：' + outFile,
+      '（必须真的生成图片文件，不要画 SVG，不要复制别的图片。）',
+      '',
+      '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who,
+      '',
+      '这次的生活场景：' + String(scene || '在家发呆').slice(0, 200),
+      '',
+      '风格：' + style,
+      '要求：',
+      '1) 竖构图或方构图都可以，像手机相册里的照片；',
+      '2) 不要正脸大特写，最好背影、侧脸、低头、只露半张脸，或干脆只拍手、脚、桌面局部；',
+      '3) 不要出现第二个人，不要网红脸，不要浓妆，不要文字、logo、水印、边框；',
+      '4) 画面要能对上这个场景，让人一看就知道在做什么。',
+      '完成后只回复一句话：已保存。'
+    ].join('\n');
+    const started = Date.now();
+    let raw = '';
+    const child = spawn(process.execPath, [
+      codexEntry(), 'exec', '-C', dir,
+      '-c', 'model_reasoning_effort="low"',
+      '--skip-git-repo-check',
+      '--dangerously-bypass-approvals-and-sandbox',
+      '-'
+    ], {
+      env: Object.assign({}, process.env, { HTTPS_PROXY: PROXY, HTTP_PROXY: PROXY }),
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+    const timer = setTimeout(() => { try { child.kill(); } catch { /* ignore */ } }, timeoutMs || 300000);
+    child.stdout.on('data', (b) => { raw += b.toString('utf8'); });
+    child.stderr.on('data', (b) => { raw += b.toString('utf8'); });
+    child.on('error', () => { clearTimeout(timer); resolve(null); });
+    child.on('close', () => {
+      clearTimeout(timer);
+      try {
+        const st = fs.statSync(outFile);
+        if (st.size > 20 * 1024) return resolve({ file: outFile, ms: Date.now() - started, raw: raw.slice(-800) });
+      } catch { /* not created */ }
+      resolve(null);
+    });
+    child.stdin.end(prompt + '\n');
+  });
+}
+
+module.exports = { generateImage, available, choose, parseResult, buildPrompt, codexEntry };
