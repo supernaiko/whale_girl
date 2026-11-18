@@ -6,7 +6,7 @@ const codex = require(path.join(__dirname, '..', 'src', 'services', 'momentsCode
 
 test('parseResult 从噪声里取出 JSON', () => {
   const raw = '思考中...\n{"pick":1,"text":"今天的风挺舒服"}\n';
-  assert.deepStrictEqual(codex.parseResult(raw, 3), { pick: 1, text: '今天的风挺舒服' });
+  assert.deepStrictEqual(codex.parseResult(raw, 3), { pick: 1, text: '今天的风挺舒服', person: false });
 });
 
 test('parseResult 拒绝越界下标和空文案', () => {
@@ -17,7 +17,7 @@ test('parseResult 拒绝越界下标和空文案', () => {
 
 test('parseResult 容忍尾随说明文字', () => {
   const raw = 'note\n{"pick":0,"text":"吃面了"}\n以上。';
-  assert.deepStrictEqual(codex.parseResult(raw, 1), { pick: 0, text: '吃面了' });
+  assert.deepStrictEqual(codex.parseResult(raw, 1), { pick: 0, text: '吃面了', person: false });
 });
 
 test('buildPrompt 强调只输出 JSON 且不少规矩', () => {

@@ -217,6 +217,49 @@ class MomentsPublisher {
     }
   }
 
+  // 她自己的人物照池：只允许用这里面的图代表“她本人”，避免一天一个人。
+  selfDir() { return path.join(this.images, '..', 'self'); }
+
+  selfImages() {
+    try {
+      const dir = this.selfDir();
+      fs.mkdirSync(dir, { recursive: true });
+      return fs.readdirSync(dir).filter(n => /\.(jpe?g|png)$/i.test(n))
+        .map(n => path.join(dir, n)).slice(0, 3);
+    } catch { return []; }
+  }
+
+  // 第一次用 Codex 写作时，挑一张“像她自己”的生活照存起来，之后一直用这几张。
+  async ensureSelfPortrait() {
+    if (this.selfImages().length || !momentsCodex.available()) return;
+    const picks = [];
+    try {
+      for (const q of ['背影 长发 女生 日常', '长发 侧影 生活照']) {
+        const posts = await searchPosts(q, { cookie: this.weiboCookie() });
+        for (const post of posts.slice(0, 6)) {
+          if (!post.images || post.images.length !== 1 || !post.text) continue;
+          if (post.text.length < 6) continue;
+          const file = await downloadWeibo(post.images[0], path.join(this.images, 'self-pick'));
+          if (file) picks.push(file);
+          if (picks.length >= 4) break;
+        }
+        if (picks.length >= 4) break;
+      }
+    } catch { /* ignore */ }
+    if (!picks.length) return;
+    const chosen = await momentsCodex.choose({
+      images: picks, selfCount: 0, name: '', desc: '',
+      mood: '', lines: [], logger: this.logger,
+    });
+    if (!chosen) return;
+    try {
+      const dir = this.selfDir();
+      fs.mkdirSync(dir, { recursive: true });
+      fs.copyFileSync(picks[chosen.pick], path.join(dir, 'self-01.jpg'));
+      this.logger?.info?.('[moments] self-portrait saved');
+    } catch { /* ignore */ }
+  }
+
   // Codex 路线：先把候选照片下载好，交给 Codex 看一眼挑一张并写一句；
   // 任何一步失败都返回 false，让上层继续走 DeepSeek 的流程。
   async generateWithCodex(settings, account, revision, ctx = {}) {
@@ -243,8 +286,12 @@ class MomentsPublisher {
       } catch { /* ignore */ }
     }
     if (!candidates.length) return false;
+    let selfFiles = [];
+    try { await this.ensureSelfPortrait(); selfFiles = this.selfImages(); } catch { /* ignore */ }
+    const ordered = [...selfFiles.map(f => ({ file: f, self: true })), ...candidates];
     const picked = await momentsCodex.choose({
-      images: candidates.map(item => item.file),
+      images: ordered.map(item => item.file),
+      selfCount: selfFiles.length,
       name: persona?.name, desc: persona?.desc,
       mood: bond ? (bond.label || '') : '',
       lines,
@@ -257,7 +304,7 @@ class MomentsPublisher {
     const draft = { text: picked.text, emotion: '', imageQuery: '' };
     this.queueDraft(draft, account, settings, {
       hash, lastSource: entries[0]?.ts, manual, scheduled: !manual,
-    }, true, candidates[picked.pick].file);
+    }, true, ordered[picked.pick].file);
     this.logger?.info?.('[moments] writer=codex pick=' + picked.pick + ' text=' + picked.text.length);
     return true;
   }
