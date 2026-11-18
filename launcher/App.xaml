@@ -487,5 +487,32 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-    </Application.Resources>
+    
+    <Style TargetType="TabItem" x:Key="DarkTabItem">
+        <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="Chip" CornerRadius="7" Padding="13,6"
+                            Background="{DynamicResource GhostBg}"
+                            BorderBrush="{DynamicResource LineSoft}" BorderThickness="1">
+                        <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Chip" Property="Background" Value="{DynamicResource Hover}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Chip" Property="Background" Value="{DynamicResource AccentSoft}" />
+                            <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            <Setter Property="Foreground" Value="{DynamicResource Text}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</Application.Resources>
 </Application>

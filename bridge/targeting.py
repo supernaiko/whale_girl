@@ -60,11 +60,20 @@ def _hotkey(hwnd, key, control=False):
     return True
 
 
+def _last_active_popup(hwnd):
+    """pywin32 不是每个版本都有 GetLastActivePopup，走 user32 兜底。"""
+    try:
+        import ctypes
+        return int(ctypes.windll.user32.GetLastActivePopup(int(hwnd)))
+    except Exception:
+        return int(hwnd)
+
+
 def _dismiss_popup(hwnd):
     import win32gui
     import win32process
 
-    popup = win32gui.GetLastActivePopup(hwnd)
+    popup = _last_active_popup(hwnd)
     if not popup or popup == hwnd or not win32gui.IsWindowVisible(popup):
         return
     if win32process.GetWindowThreadProcessId(popup)[1] != win32process.GetWindowThreadProcessId(hwnd)[1]:
@@ -105,43 +114,26 @@ def _search(uia, hwnd, names, aliases, ready):
     return False
 
 
+def _open_chat_any(uia, hwnd, names, aliases, ready):
+    """用 wechatauto 的 open_chat（搜索+点开+核对）逐个试，兼容没有 _session_rows_of 的版本。"""
+    for name in names:
+        if not ready():
+            return False
+        try:
+            ok = uia.open_chat(name)
+        except Exception:
+            ok = False
+        if ok and _verified(uia, aliases, ready):
+            return True
+    return False
+
+
 def _list(uia, hwnd, names, aliases, ready):
-    if not ready():
-        return False
-    _hotkey(hwnd, 0x1B)
-    uia.back_to_chat_tab()
-    rows = uia._session_rows_of(uia._win)
-    exact = [(name, control) for name, control in rows if file_alias_match(name, aliases)]
-    if len(exact) != 1 or not ready():
-        return False
-    control = exact[0][1]
-    # 使用驱动的点击原语以保留 MMUI 渲染层穿透兼容。
-    uia._click_ctrl(control)
-    time.sleep(0.08)
-    if not ready():
-        return False
-    uia._click_ctrl(control)
-    time.sleep(0.2)
-    return _verified(uia, aliases, ready)
+    return _open_chat_any(uia, hwnd, names, aliases, ready)
 
 
 def _recent(uia, hwnd, names, aliases, ready):
-    if _verified(uia, aliases, ready):
-        return True
-    if not ready():
-        return False
-    # 搜索/切页可能替换整棵树，重新锚定主窗后再读最近会话，不能复用旧 COM 控件。
-    root = uia._anchor(hwnd)
-    if root is None or int(root.NativeWindowHandle) != hwnd:
-        return False
-    uia._win = root
-    rows = uia._session_rows_of(root)[:12]
-    exact = [(name, control) for name, control in rows if file_alias_match(name, aliases)]
-    if len(exact) != 1 or not ready():
-        return False
-    uia._click_ctrl(exact[0][1])
-    time.sleep(0.2)
-    return _verified(uia, aliases, ready)
+    return _open_chat_any(uia, hwnd, names, aliases, ready)
 
 
 def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
@@ -180,6 +172,10 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
                 raise TargetUnavailable()
             detail = 'foreground_unavailable'
             _dismiss_popup(hwnd)
+            if win32gui.IsIconic(hwnd):
+                win32gui.ShowWindow(hwnd, 9)   # SW_RESTORE：最小化时 UIA 树是空的
+                time.sleep(0.45)
+
             activated = activate_target(hwnd)
             focus = win32gui.GetForegroundWindow()
             if focus != hwnd:

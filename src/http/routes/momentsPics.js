@@ -6,6 +6,7 @@ const { json, readBody } = require('../util');
 const { isLoopbackRequest } = require('../security');
 const { applyConfigPatch } = require('../../infra/configPatch');
 const momentsCodex = require('../../services/momentsCodex');
+const momentsPaint = require('../../services/momentsPaint');
 const { searchPosts, download: downloadWeibo } = require('../../services/weiboPosts');
 
 const PROMPT = [
@@ -108,6 +109,51 @@ module.exports = function register(router) {
       raw: String(raw || '').slice(-3000),
       error: result ? '' : 'Codex 没有给出可用的 JSON（可能超时或被代理挡住）',
     });
+  });
+
+  // 按场景让 Codex 出一张；有本人图就拿来当参考图锁脸。
+  router.post('/api/moments/pics/paint', async (runtime, req, res) => {
+    local(req);
+    const body = await readBody(req) || {};
+    const scene = String(body.scene || '').trim().slice(0, 300);
+    if (!scene) return json(res, 400, { ok: false, error: '先写一句场景' });
+    const dataDir = runtime.config.paths.dataDir;
+    const selfs = (() => {
+      try {
+        const dir = path.join(dataDir, 'moments', 'self');
+        return fs.readdirSync(dir).filter(n => EXTS.has(path.extname(n).toLowerCase())).sort()
+          .map(n => path.join(dir, n));
+      } catch { return []; }
+    })();
+    const view = body.view === 'selfie' || body.view === 'thirdPerson' || body.view === 'firstPerson' ? body.view
+      : (/出去玩|旅行|景点|海边|爬山|逛街|打卡|拍照/.test(scene) ? 'thirdPerson'
+        : (/自拍|对着镜头|正脸/.test(scene) ? 'selfie' : 'firstPerson'));
+    const started = Date.now();
+    const file = await momentsPaint.paint({
+      dataDir, scene, view,
+      frontView: view === 'selfie',
+      reference: selfs.length ? selfs[0] : '',
+      logger: runtime.logger,
+    });
+    if (!file || !fs.existsSync(file)) {
+      return json(res, 500, { ok: false, error: 'Codex 没有出图（可能超时或被代理挡住）', elapsedMs: Date.now() - started });
+    }
+    let image = '';
+    try { image = 'data:image/' + (path.extname(file).toLowerCase() === '.png' ? 'png' : 'jpeg') + ';base64,' + fs.readFileSync(file).toString('base64'); } catch { /* ignore */ }
+    return json(res, 200, { ok: true, file, scene, view, elapsedMs: Date.now() - started, image });
+  });
+
+  // 最近的朋友圈日志，给页面下的日志卡用。
+  router.get('/api/moments/pics/log', (runtime, req, res) => {
+    local(req);
+    const file = path.join(runtime.config.paths.dataDir, 'whale.log');
+    let lines = [];
+    try {
+      lines = fs.readFileSync(file, 'utf8').split(/\r?\n/)
+        .filter(line => /\[moments\]|momentsPublisher/.test(line))
+        .slice(-120);
+    } catch { /* ignore */ }
+    return json(res, 200, { ok: true, file, lines });
   });
 
   router.post('/api/moments/pics/settings', async (runtime, req, res) => {

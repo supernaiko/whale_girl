@@ -62,7 +62,8 @@ namespace WhaleLauncher
 
             var dir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             _sup = new RuntimeSupervisor(dir);
-            _sup.UpdateBlocked = true;
+            // 不再联网查版本，启动不被「必须更新」拦住
+            _sup.UpdateBlocked = false;
             _pluginMarket = new PluginMarket(dir);
 
             // 正式版不该显示成 v4.0-alpha：那会让用户以为自己装的是测试版，
