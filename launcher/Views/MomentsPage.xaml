@@ -35,6 +35,13 @@
                     <CheckBox x:Name="ChkPublishImage" Content="按情绪配一张图片" />
                 </WrapPanel>
                 <WrapPanel Margin="0,8,0,0">
+                    <TextBlock Text="文案由谁写" Style="{StaticResource Label}" VerticalAlignment="Center" />
+                    <ComboBox x:Name="CmbWriter" Width="190" FontSize="12" Margin="6,0,0,0" VerticalContentAlignment="Center">
+                        <ComboBoxItem Content="DeepSeek（默认，便宜快）" Tag="deepseek" />
+                        <ComboBoxItem Content="Codex（会看图挑图，慢）" Tag="codex" />
+                    </ComboBox>
+                </WrapPanel>
+                <WrapPanel Margin="0,8,0,0">
                     <TextBlock Text="每隔（小时）" Style="{StaticResource Label}" VerticalAlignment="Center" />
                     <TextBox x:Name="TxtPublishInterval" Width="56" Text="6" Margin="6,0,16,0" />
                     <TextBlock Text="每天最多" Style="{StaticResource Label}" VerticalAlignment="Center" />

@@ -37,6 +37,8 @@ function prepareMomentsPublishPatch(body, current = {}) {
     patch['moments.publishEnabled'] = featureEnabled && body.enabled === true;
   }
   if (own(body, 'withImage')) patch['moments.publishWithImage'] = body.withImage === true;
+  // 朋友圈文案由谁写：deepseek / codex
+  if (own(body, 'writer')) patch['moments.writer'] = body.writer === 'codex' ? 'codex' : 'deepseek';
   if (own(body, 'interval') || own(body, 'intervalHours')) {
     const interval = own(body, 'intervalHours') ? body.intervalHours : body.interval;
     patch['moments.publishIntervalHours'] = interval;

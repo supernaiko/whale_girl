@@ -97,6 +97,26 @@ class StickerMixin:
                 desktop = G.WindowsDesktop()
                 if not desktop.foreground(hwnd):
                     snap = self.snapshot_win_state()
+                    try:
+                        from moments_window import activate_verified_window
+                    except Exception:
+                        activate_verified_window = None
+                    if activate_verified_window is not None:
+                        def activation_allowed():
+                            return (bool(self.ACCOUNT.get('verified'))
+                                    and int(self.ACCOUNT.get('hwnd') or 0) == hwnd
+                                    and self.sticker_activity_allowed(chat_username))
+
+                        evidence = {}
+                        ready = activate_verified_window(
+                            self, hwnd, int(self.ACCOUNT.get('pid') or 0), activation_allowed,
+                            pause=G.time.sleep, probe=evidence.update)
+                        if not ready or not desktop.foreground(hwnd):
+                            G.log_throttled('sticker-window-not-ready',
+                                            '[sticker] stage=foreground result=failed'
+                                            ' reason=window_not_ready attempts=%d'
+                                            % evidence.get('attempts', 0), ttl=60)
+                            return G.sticker_result('failed', 'could not bring the WeChat window to the foreground')
             except Exception:
                 return G.sticker_result('failed', 'foreground safety checks are unavailable')
             try:

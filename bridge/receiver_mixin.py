@@ -94,33 +94,26 @@ def image_dir_note(db, path):
 
 
 def _nested_quote_text(quoted):
-    """被引用的内容本身还是 XML（多层引用）时，往里剥最多两层拿纯文字。"""
+    """把被引用内容本身也是 XML 的情况剥开（引用里套引用）。"""
     for _ in range(2):
-        if quoted.startswith('<') and '<refermsg' in quoted:
-            inner = re.search(r'<refermsg>.*?</refermsg>', quoted, re.S)
-            if inner:
-                content = re.search(r'<content>(.*?)</content>', inner.group(0), re.S)
-                if content:
-                    quoted = html.unescape(content.group(1)).strip()
-                    continue
-        break
+        nested = parse_quote_content(quoted, unwrap_nested=False) if str(quoted or '').startswith('<') else None
+        if nested is None:
+            break
+        _, original, reply = nested
+        quoted = original or reply
     return quoted
 
 
-def parse_quote_content(content):
-    """把微信的引用消息 XML 拆成 (被引用者, 被引用正文, 这次新打的字)。
+def parse_quote_content(content, *, unwrap_nested=True):
+    """从微信引用消息 XML 里解出 (被引用者, 被引用内容, 这次新内容)。
 
-    微信的引用回复是 appmsg（57<<32|49，类型名落到「文件/链接/卡片」），正文
-    是一条没有 <url> 的 XML，原来的处理找不到链接就把整条丢掉 —— 用户「引用一句
-    再回」时机器人像没收到。这里取 <refermsg> 里的昵称和原话，再取出引用者这次
-    真正打的字：老版本在最后一个 </msg> 之后，微信 4.x 放在 <title> 里。
-
-    没有完整引用结构或类型不符时返回 None，交给原来的类型分支处理。
+    群聊引用在 XML 前会带「发送者ID:\n」前缀；微信 4.x 把这次新内容放在最后一个
+    </msg> 之后，旧版放在 <title> 里。
     """
     if '<refermsg' not in str(content or ''):
         return None
-    content = str(content)
-    # 字面标签和不完整 XML 都可能出现在普通正文里，不能仅凭子串判为引用。
+    content = str(content).lstrip('\ufeff \t\r\n')
+    content = re.sub(r'\A[A-Za-z][A-Za-z0-9_-]{3,}:\r?\n(?=\s*<)', '', content, count=1).lstrip()
     import xml.etree.ElementTree as _et
     end = content.rfind('</msg>')
     if end < 0:
@@ -135,28 +128,24 @@ def parse_quote_content(content):
     if len(apps) > 1:
         return None
     envelope = apps[0] if apps else root
-    if len(envelope.findall('refermsg')) != 1:
+    references = envelope.findall('refermsg')
+    if len(references) != 1:
         return None
     quote_type = envelope.findtext('type')
     if quote_type is not None and quote_type.strip() != '57':
         return None
-    quoted_by = quoted = ''
-    block = re.search(r'<refermsg>.*?</refermsg>', content, re.S)
-    if block:
-        body = block.group(0)
-        name = re.search(r'<displayname>(.*?)</displayname>', body, re.S)
-        said = re.search(r'<content>(.*?)</content>', body, re.S)
-        quoted_by = html.unescape(name.group(1)).strip() if name else ''
-        quoted = html.unescape(said.group(1)).strip() if said else ''
-    quoted = _nested_quote_text(quoted)
-    tail = html.unescape(content.rsplit('</msg>', 1)[-1]).strip() if '</msg>' in content else ''
-    title = re.search(r'<title>(.*?)</title>', content, re.S)
-    reply = tail or (html.unescape(title.group(1)).strip() if title else '')
+    reference = references[0]
+    quoted_by = (reference.findtext('displayname', default='') or '').strip()
+    quoted = (reference.findtext('content', default='') or '').strip()
+    if unwrap_nested:
+        quoted = _nested_quote_text(quoted)
+    tail = html.unescape(content[end + len('</msg>'):]).strip()
+    reply = tail or (envelope.findtext('title', default='') or '').strip()
     return quoted_by, quoted, reply
 
 
 def quote_content_text(content):
-    """引用消息转成给模型看的正文；没有可用的引用内容时返回空串。"""
+    """把引用消息转成给模型看的文本；没有可用引用内容时返回空串。"""
     parsed = parse_quote_content(content)
     if parsed is None:
         return None
@@ -164,10 +153,10 @@ def quote_content_text(content):
     if not quoted and not reply:
         return ''
     if quoted and reply:
-        return ('（引用%s「%s」）%s' % (quoted_by or '对方', quoted, reply)).strip()
+        return ('（引用 %s：%s）%s' % (quoted_by or '对方', quoted, reply)).strip()
     if reply:
         return reply
-    return ('（引用%s「%s」）' % (quoted_by or '对方', quoted)).strip()
+    return ('（引用 %s：%s）' % (quoted_by or '对方', quoted)).strip()
 
 
 class ReceiverMixin:

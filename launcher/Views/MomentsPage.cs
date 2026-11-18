@@ -287,6 +287,7 @@ public sealed partial class MomentsPage : UserControl
                 ChkPublishFeature.IsChecked = res.Bool("featureEnabled");
                 ChkPublish.IsChecked = res.Bool("enabled");
                 ChkPublishImage.IsChecked = res.Bool("withImage");
+                SelectWriter(res.Prop("writer").ToString());
                 TxtPublishInterval.Text = res.Prop("interval").ToString();
                 TxtPublishLimit.Text = res.Long("maxPerDay").ToString();
                 publishSettingsLoaded = true;
@@ -310,7 +311,7 @@ public sealed partial class MomentsPage : UserControl
         try
         {
             var res = await sup.SaveConfigurationAsync("/api/moments/publish-settings",
-                new { featureEnabled, enabled, withImage = ChkPublishImage.IsChecked == true, interval, maxPerDay });
+                new { featureEnabled, enabled, withImage = ChkPublishImage.IsChecked == true, interval, maxPerDay, writer = SelectedWriter() });
             if (!res.Ok) { PublishStatus.Text = Api.Message(res); return; }
             publishSettingsLoaded = true;
             ChkPublish.IsChecked = res.Bool("enabled");
@@ -422,5 +423,23 @@ public sealed partial class MomentsPage : UserControl
     {
         try { var snapshot = await sup.ProbeAsync(); return snapshot.BrAccount ?? ""; }
         catch { return ""; }
+    }
+
+    void SelectWriter(string value)
+    {
+        var want = string.Equals(value, "codex", StringComparison.OrdinalIgnoreCase) ? "codex" : "deepseek";
+        foreach (var raw in CmbWriter.Items)
+            if (raw is ComboBoxItem item)
+            if (string.Equals(item.Tag?.ToString(), want, StringComparison.OrdinalIgnoreCase))
+            {
+                CmbWriter.SelectedItem = item;
+                return;
+            }
+        CmbWriter.SelectedIndex = 0;
+    }
+
+    string SelectedWriter()
+    {
+        return (CmbWriter.SelectedItem as ComboBoxItem)?.Tag?.ToString() == "codex" ? "codex" : "deepseek";
     }
 }

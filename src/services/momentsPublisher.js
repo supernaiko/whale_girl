@@ -8,6 +8,7 @@ const time = require('../infra/time');
 const { describeError } = require('../infra/errors');
 const { installPresets } = require('../adapters/stickerPresets');
 const { fetchPhoto } = require('./momentsPhotos');
+const momentsCodex = require('./momentsCodex');
 const { searchPosts, download: downloadWeibo } = require('./weiboPosts');
 const { scheduleSettings, eligibility } = require('./momentsScheduler');
 
@@ -140,6 +141,7 @@ class MomentsPublisher {
       enabled: m.publishEnabled === true,
       withImage: m.publishWithImage === true,
       photoPrimary: m.photoPrimary === true,
+      writer: m.writer === 'codex' ? 'codex' : 'deepseek',
       account: String(m.publishAccount || ''),
       interval: schedule.intervalHours,
     };
@@ -215,6 +217,51 @@ class MomentsPublisher {
     }
   }
 
+  // Codex 路线：先把候选照片下载好，交给 Codex 看一眼挑一张并写一句；
+  // 任何一步失败都返回 false，让上层继续走 DeepSeek 的流程。
+  async generateWithCodex(settings, account, revision, ctx = {}) {
+    const { lines = [], entries = [], manual = false, bond, persona } = ctx;
+    if (!settings.withImage) return false;
+    await this.prepareImages();
+    const moodWord = bond ? this.moodQuery(bond) : '';
+    const query = String(moodWord || '').split(/[\s，,、/]+/).filter(Boolean)[0] || '';
+    const candidates = [];
+    try {
+      const posts = await searchPosts(query || '日常', { cookie: this.weiboCookie() });
+      for (const post of posts.slice(0, 6)) {
+        if (!post.images?.length || post.images.length !== 1) continue;
+        if (!post.text || post.text.length < 10) continue;
+        const file = await downloadWeibo(post.images[0], path.join(this.images, 'codex-pick'));
+        if (file) candidates.push({ file, source: post.text });
+        if (candidates.length >= 4) break;
+      }
+    } catch { /* 微博不通就没有候选 */ }
+    if (!candidates.length) {
+      try {
+        const one = await fetchPhoto(query || '日常', path.join(this.images, 'codex-pick'));
+        if (one) candidates.push({ file: one, source: '' });
+      } catch { /* ignore */ }
+    }
+    if (!candidates.length) return false;
+    const picked = await momentsCodex.choose({
+      images: candidates.map(item => item.file),
+      name: persona?.name, desc: persona?.desc,
+      mood: bond ? (bond.label || '') : '',
+      lines,
+      logger: this.logger,
+    });
+    if (!picked) return false;
+    if (revision !== this.settingsRevision) return true;
+    const hash = digest(normalized(picked.text));
+    if (this.state.lastHash === hash) { this.save({ status: 'filtered' }); return true; }
+    const draft = { text: picked.text, emotion: '', imageQuery: '' };
+    this.queueDraft(draft, account, settings, {
+      hash, lastSource: entries[0]?.ts, manual, scheduled: !manual,
+    }, true, candidates[picked.pick].file);
+    this.logger?.info?.('[moments] writer=codex pick=' + picked.pick + ' text=' + picked.text.length);
+    return true;
+  }
+
   async generate(settings, account, revision, manual = false, withImage = settings.withImage) {
     const now = this.now();
     const since = Math.max(manual ? now - 24 * HOUR : time.startOfDay(now, settings.timezone) - 1,
@@ -238,6 +285,13 @@ class MomentsPublisher {
     this.logger?.info?.('[moments] keys=' + keys.length + ' entries=' + entries.length + ' lines=' + lines.length);
     if (!lines.length) { this.save({ status: 'no_material' }); return; }
     if (!this.llm || this.llm.isMock) { this.save({ status: 'model_unavailable' }); return; }
+    if (settings.writer === 'codex' && momentsCodex.available()) {
+      try {
+        const done = await this.generateWithCodex(settings, account, revision, { lines, entries, manual, bond: this.bondState(), persona: this.personaBrief() });
+        if (done) return;
+      } catch (error) { this.logger?.warn?.('[moments] codex error: ' + error.message); }
+    }
+
     const bond = this.bondState();
     const persona = this.personaBrief();
     const moodLine = bond

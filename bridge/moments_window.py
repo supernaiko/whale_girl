@@ -1,11 +1,23 @@
 """朋友圈和表情包共用的限时前台切换。"""
 import time
 
-from window_activation import unlock_foreground
+
+def _unlock_foreground():
+    import win32api
+
+    # 用户正按着修饰键或鼠标时，不合成 Alt 组合键，也不释放用户自己按下的键。
+    if any(win32api.GetAsyncKeyState(key) & 0x8000
+           for key in (0x10, 0x11, 0x12, 0x5B, 0x5C, 0x01, 0x02)):
+        return False
+    try:
+        win32api.keybd_event(0x12, 0, 0, 0)
+    finally:
+        win32api.keybd_event(0x12, 0, 2, 0)
+    return True
 
 
 def activate_verified_window(runtime, hwnd, pid, allowed, *, pause=time.sleep,
-                             unlock=unlock_foreground, probe=lambda details: None):
+                             unlock=None, probe=lambda details: None):
     import win32gui as win
     import win32process as process
 
@@ -31,10 +43,10 @@ def activate_verified_window(runtime, hwnd, pid, allowed, *, pause=time.sleep,
         for attempt in range(2):
             if not valid() or not allowed():
                 return False
-            if win.GetForegroundWindow() not in (0, previous, hwnd):
-                return False
             if attempt:
-                if not unlock():
+                if win.GetForegroundWindow() not in (0, previous, hwnd):
+                    return False
+                if not (unlock or _unlock_foreground)():
                     return False
                 pause(0.05)
                 if not valid() or not allowed():
@@ -51,8 +63,7 @@ def activate_verified_window(runtime, hwnd, pid, allowed, *, pause=time.sleep,
                 if not valid():
                     return False
                 if ready():
-                    # 等待期间只读窗口状态；即将操作时才重新核对远程任务闸。
-                    return bool(allowed() and ready())
+                    return True
                 foreground = win.GetForegroundWindow()
                 if foreground and foreground not in (previous, hwnd):
                     return False
@@ -69,3 +80,6 @@ def activate_verified_window(runtime, hwnd, pid, allowed, *, pause=time.sleep,
                    'visible': bool(win.IsWindowVisible(hwnd)), 'iconic': bool(win.IsIconic(hwnd))})
         except Exception:
             pass
+
+
+activate_for_publish = activate_verified_window
