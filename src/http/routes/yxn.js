@@ -2,7 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { json } = require('../util');
+const { json, readBody } = require('../util');
 
 const BASELINE = { valence: 55, energy: 50 };
 
@@ -47,7 +47,118 @@ function readBond(dataDir) {
   }
 }
 
-module.exports = function register(router) {
+
+const CHAT_BUCKETS = ['greeting', 'care', 'food', 'bored', 'tired', 'happy', 'sad', 'angry', 'flirt', 'work', 'other'];
+const CHAT_MODES = ['off', 'fallback', 'probabilistic'];
+const DEFAULT_CHAT_CONFIG = {
+  mode: 'off', probability: 0.25, readDelay: { min: 3, max: 30 },
+  typingMsPerChar: 120, maxDelaySec: 45, minFreeRamMB: 1024, bucketsOff: [],
+};
+const DEFAULT_LOCAL_MODEL = { enabled: false, cmd: '', modelPath: '', maxTokens: 64 };
+
+function chatDir(dataDir) {
+  return path.join(dataDir, 'plugins', 'yxn-chat.data');
+}
+
+function readJson(file, fallback) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/u, ''));
+    return raw && typeof raw === 'object' ? raw : fallback;
+  } catch { return fallback; }
+}
+
+function writeJson(file, value) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
+  fs.renameSync(tmp, file);
+}
+
+function clampNum(v, lo, hi, d) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return d;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function normalizeChatConfig(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const min = Math.round(clampNum(src.readDelay && src.readDelay.min, 1, 120, 3));
+  const max = Math.round(clampNum(src.readDelay && src.readDelay.max, min, 180, 30));
+  const mode = CHAT_MODES.includes(src.mode) ? src.mode : 'off';
+  const off = Array.isArray(src.bucketsOff) ? src.bucketsOff.filter((b) => CHAT_BUCKETS.includes(b)) : [];
+  return {
+    mode,
+    probability: Math.round(clampNum(src.probability, 0, 1, 0.25) * 100) / 100,
+    readDelay: { min, max },
+    typingMsPerChar: Math.round(clampNum(src.typingMsPerChar, 20, 500, 120)),
+    maxDelaySec: Math.round(clampNum(src.maxDelaySec, 5, 300, 45)),
+    minFreeRamMB: Math.round(clampNum(src.minFreeRamMB, 0, 65536, 1024)),
+    bucketsOff: [...new Set(off)],
+  };
+}
+
+function normalizeLocalModel(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  return {
+    enabled: src.enabled === true,
+    cmd: typeof src.cmd === 'string' ? src.cmd.slice(0, 400) : '',
+    modelPath: typeof src.modelPath === 'string' ? src.modelPath.slice(0, 400) : '',
+    maxTokens: Math.round(clampNum(src.maxTokens, 8, 512, 64)),
+  };
+}
+
+function chatSnapshot(dataDir) {
+  const dir = chatDir(dataDir);
+  const config = normalizeChatConfig(readJson(path.join(dir, 'config.json'), DEFAULT_CHAT_CONFIG));
+  const brain = readJson(path.join(dir, 'brain.json'), { buckets: {} });
+  const buckets = brain.buckets && typeof brain.buckets === 'object' ? brain.buckets : {};
+
+  const rows = CHAT_BUCKETS.map((id) => {
+    const list = Array.isArray(buckets[id]) ? buckets[id] : [];
+    const weights = list.map((e) => Number(e && e.weight)).filter((n) => Number.isFinite(n));
+    const avg = weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : 0;
+    const examples = list.slice(-20)
+      .map((e) => String(e && e.text || '').trim()).filter(Boolean).slice(-3);
+    return {
+      id,
+      count: list.length,
+      avgWeight: Math.round(avg * 10) / 10,
+      off: config.bucketsOff.includes(id),
+      examples,
+    };
+  });
+
+  let poolLines = 0;
+  try {
+    const pool = fs.readFileSync(path.join(dir, 'pool.jsonl'), 'utf8');
+    poolLines = pool.split('\n').filter((l) => l.trim()).length;
+  } catch { poolLines = 0; }
+
+  let activity = [];
+  try {
+    const lines = fs.readFileSync(path.join(dir, 'activity.log'), 'utf8').split(/\r?\n/).filter(Boolean);
+    activity = lines.slice(-120);
+  } catch { activity = []; }
+
+  const model = normalizeLocalModel(readJson(path.join(dir, 'local-model.json'), DEFAULT_LOCAL_MODEL));
+  const modelFile = model.modelPath ? fs.existsSync(model.modelPath) : false;
+  const cmdFile = model.cmd ? fs.existsSync(model.cmd.split(' ')[0].replace(/^"|"$/g, '')) : false;
+
+  return {
+    config,
+    buckets: rows,
+    totals: {
+      count: rows.reduce((a, b) => a + b.count, 0),
+      buckets: rows.filter((r) => r.count > 0).length,
+      poolLines,
+    },
+    localModel: { ...model, modelExists: modelFile, cmdExists: cmdFile },
+    activity,
+    dir,
+  };
+}
+
+
+function register(router) {
   router.get('/api/yxn/status', (runtime, req, res) => {
     const { dataDir } = runtime.config.paths;
     const state = readBond(dataDir);
@@ -78,6 +189,34 @@ module.exports = function register(router) {
       baseline: BASELINE,
       people,
     });
+  });
+
+  router.get('/api/yxn/chat', (runtime, req, res) => {
+    const { dataDir } = runtime.config.paths;
+    return json(res, 200, { ok: true, ...chatSnapshot(dataDir) });
+  });
+
+  router.post('/api/yxn/chat/config', async (runtime, req, res) => {
+    const { dataDir } = runtime.config.paths;
+    const body = await readBody(req);
+    try {
+      const dir = chatDir(dataDir);
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, 'config.json');
+      const current = readJson(file, DEFAULT_CHAT_CONFIG);
+      const next = normalizeChatConfig({ ...current, ...(body && body.config) });
+      writeJson(file, next);
+
+      const modelFile = path.join(dir, 'local-model.json');
+      if (body && body.localModel && typeof body.localModel === 'object') {
+        const prev = readJson(modelFile, { enabled: false, cmd: '', modelPath: '', maxTokens: 64 });
+        writeJson(modelFile, normalizeLocalModel({ ...prev, ...body.localModel }));
+      }
+
+      return json(res, 200, { ok: true, ...chatSnapshot(dataDir) });
+    } catch (err) {
+      return json(res, 400, { ok: false, error: err && err.message ? err.message : '保存失败' });
+    }
   });
 
   router.get('/api/yxn/voice', (runtime, req, res) => {
@@ -117,3 +256,6 @@ function voiceStats(samples) {
     samples: list.slice(-8),
   };
 }
+
+module.exports = register;
+module.exports.helpers = { chatSnapshot, normalizeChatConfig };
