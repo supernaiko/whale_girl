@@ -452,6 +452,26 @@ class MomentsPublisher {
     this.job = { id: randomUUID(), at: this.now(), status: 'queued', account, revision: this.settingsRevision, ...extra, query: { ...this.preview, manual: extra?.manual === true } };
   }
 
+  // 记下「这条是我自己发的」，供聊天里回答「你刚发了什么」。
+  rememberOwn() {
+    try {
+      const q = this.job && this.job.query ? this.job.query : {};
+      if (!q.text) return;
+      const root = this.config?.root || path.resolve(__dirname, '../..');
+      const file = path.join(root, 'data', 'moments', 'own-posts.json');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      let list = [];
+      try { const raw = JSON.parse(fs.readFileSync(file, 'utf8')); if (Array.isArray(raw)) list = raw; } catch { list = []; }
+      list.push({
+        at: this.now(),
+        text: String(q.text).slice(0, 120),
+        image: q.image ? path.basename(q.image) : '',
+        category: String(q.category || ''),
+      });
+      fs.writeFileSync(file, JSON.stringify(list.slice(-10)), 'utf8');
+    } catch { /* 记录失败不影响发表 */ }
+  }
+
   dailyCount() {
     return this.state.day === this.today() ? Number(this.state.count) || 0 : 0;
   }
@@ -503,6 +523,7 @@ class MomentsPublisher {
       this.job.day = today;
       this.job.status = 'sending';
       this.job.claimedAt = this.now();
+      this.rememberOwn();
       log(true, this.job.manual ? 'manual_claimed' : 'claimed');
       return { id: this.job.id, action: 'publish', query: this.job.query };
     }

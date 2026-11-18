@@ -17,6 +17,7 @@
  *   chatTitle: '深海鱼塘',            // 可选，群名
  * }
  */
+const fs = require('node:fs');
 const path = require('node:path');
 const persona = require('../persona');
 const features = require('../infra/features');
@@ -1082,6 +1083,19 @@ class Bot {
       system += '\n\n【日记工具】你有一份自己的日记存档，可以读取。' +
         '主人问起日记、某天聊了什么、或让你回忆时，可以在回复最后单独写 [[diary:YYYY-MM-DD]] 或 [[diary:latest]]；' +
         '系统会把标记替换成那天的日记原文。不要编造日记内容，也不要在普通聊天里主动提这个标记。';
+    }
+    // 自己刚发过的朋友圈：主人私聊才给，且只说最近一两条；不主动提，问了才用。
+    if (isMaster && !isGroup) {
+      try {
+        const dataDir = this.config.paths?.dataDir || path.join(process.cwd(), 'data');
+        const own = JSON.parse(fs.readFileSync(path.join(dataDir, 'moments', 'own-posts.json'), 'utf8'));
+        const recent = (Array.isArray(own) ? own : []).slice(-2).filter(item => item && item.text);
+        if (recent.length) {
+          system += '\n\n【你最近发过的朋友圈】' + recent.map(item => '「' + String(item.text).slice(0, 60) + '」'
+            + (item.image ? '（配图文件：' + item.image + '）' : '（没配图）')).join('；')
+            + '。主人问起就照实说，没问就不用主动提，也不要把旧文案再念一遍。';
+        }
+      } catch { /* 没发过或读不到就跳过 */ }
     }
     // 桥接状态接在本轮状态最后一行；旧行为路径（tail 为空）也照样带上
     const maxBubbles = Number(this.config.chat.maxBubbles) || 2;
