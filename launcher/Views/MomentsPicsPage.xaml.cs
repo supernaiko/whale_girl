@@ -78,6 +78,15 @@ namespace WhaleLauncher.Views
                     break;
                 }
             }
+            var src = res.Str("imageSource");
+            foreach (var raw2 in CmbSource.Items)
+            {
+                if (raw2 is ComboBoxItem item2 && string.Equals(Convert.ToString(item2.Tag), src, StringComparison.Ordinal))
+                {
+                    CmbSource.SelectedItem = item2;
+                    break;
+                }
+            }
             ChkNoPerson.IsChecked = res.Bool("preferNoPerson");
             ChkRepeat.IsChecked = res.Bool("allowRepeat");
 
@@ -194,6 +203,11 @@ namespace WhaleLauncher.Views
             finally { BtnUsePaint.IsEnabled = true; }
         }
 
+        string Source()
+        {
+            return CmbSource.SelectedItem is ComboBoxItem item ? Convert.ToString(item.Tag) ?? "weibo" : "weibo";
+        }
+
         async void OnSave(object sender, RoutedEventArgs e)
         {
             try
@@ -201,6 +215,7 @@ namespace WhaleLauncher.Views
                 var res = await Api.PostJson(sup.Url, "/api/moments/pics/settings", new
                 {
                     writer = Writer(),
+                    imageSource = Source(),
                     preferNoPerson = ChkNoPerson.IsChecked == true,
                     allowRepeat = ChkRepeat.IsChecked == true,
                 });

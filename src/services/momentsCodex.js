@@ -134,12 +134,21 @@ function generateImage({ scene, character, outFile, timeoutMs }) {
     try { fs.mkdirSync(dir, { recursive: true }); } catch { return resolve(null); }
     try { fs.rmSync(outFile, { force: true }); } catch { /* ignore */ }
     const who = character && character.look ? character.look : '一个二十多岁的女生，长发，身材偏瘦，日常穿宽松卫衣和牛仔裤';
+    const optional = character && character.optional ? character.optional : '';
+    let outfit = '';
+    if (character && Array.isArray(character.wardrobe) && character.wardrobe.length) {
+      const seed = String(scene || '').length + new Date().getHours();
+      outfit = character.wardrobe[seed % character.wardrobe.length];
+    }
+
     const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
     const prompt = [
       '用你的图像生成工具画一张照片，并保存到：' + outFile,
       '（必须真的生成图片文件，不要画 SVG，不要复制别的图片。）',
       '',
       '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who,
+      optional ? ('细节（不是每张都要出现）：' + optional) : '',
+      outfit ? ('这次穿：' + outfit + '（换别的日子可以换别的衣服，但人不变）') : '',
       '',
       '这次的生活场景：' + String(scene || '在家发呆').slice(0, 200),
       '',

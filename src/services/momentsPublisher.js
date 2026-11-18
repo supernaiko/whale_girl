@@ -15,6 +15,8 @@ const { scheduleSettings, eligibility } = require('./momentsScheduler');
 const HOUR = 3600000;
 const SENSITIVE = /https?:\/\/|www\.|wxid_|@|\d{6,}|电话|住址|身份证|密钥|密码|验证码|订单号|银行卡|患者|病历|转账|私聊/i;
 
+function settingsCodexPaint(s) { return Boolean(s && s.imageSource === 'codex' && momentsCodex.available && momentsCodex.available()); }
+
 function digest(value) {
   return createHash('sha256').update(value).digest('hex');
 }
@@ -141,7 +143,7 @@ class MomentsPublisher {
       enabled: m.publishEnabled === true,
       withImage: m.publishWithImage === true,
       photoPrimary: m.photoPrimary === true,
-      writer: m.writer === 'codex' ? 'codex' : 'deepseek',
+      writer: m.writer === 'codex' ? 'codex' : 'deepseek', imageSource: m.imageSource === 'codex' ? 'codex' : 'weibo',
       account: String(m.publishAccount || ''),
       interval: schedule.intervalHours,
     };
@@ -269,7 +271,12 @@ class MomentsPublisher {
     const moodWord = bond ? this.moodQuery(bond) : '';
     const query = String(moodWord || '').split(/[\s，,、/]+/).filter(Boolean)[0] || '';
     const candidates = [];
-    try {
+    if (settings.imageSource === 'codex') {
+      const scene = [bond ? (bond.label || '') : '', lines[0] || ''].filter(Boolean).join('，').slice(0, 160);
+      const painted = await this.paintFor(scene || '在家发呆');
+      if (painted) candidates.push({ file: painted, source: '' });
+    }
+    if (!candidates.length) try {
       const posts = await searchPosts(query || '日常', { cookie: this.weiboCookie() });
       for (const post of posts.slice(0, 6)) {
         if (!post.images?.length || post.images.length !== 1) continue;
@@ -392,7 +399,10 @@ class MomentsPublisher {
     if (this.state.lastHash === hash) { this.save({ status: 'filtered' }); return; }
     let photo = '';
     let sourceText = '';
-    if (withImage && (draft.imageQuery || bond)) {
+    if (withImage && settings.imageSource === 'codex') {
+      photo = await this.paintFor((draft.text || '') + (draft.imageQuery ? '，' + draft.imageQuery : ''));
+    }
+    if (withImage && !photo && (draft.imageQuery || bond)) {
       await this.prepareImages();
       // 先从微博捞一条真帖子：优先按「此刻心情」搜，找不到再退回按画面词搜。
       try {
@@ -536,6 +546,24 @@ class MomentsPublisher {
       features: { ...this.config.features, stickers: true },
       sticker: { ...this.config.sticker, dir: this.images } };
     return installPresets(presetConfig, this.config.root || path.resolve(__dirname, '../..'), { manual: true });
+  }
+
+  async paintFor(sceneText) {
+    if (!settingsCodexPaint(this.settings())) return '';
+    try {
+      const character = this.characterCard();
+      const dir = path.join(this.root, 'data', 'moments', 'paint');
+      const file = path.join(dir, 'paint-' + Date.now() + '.png');
+      const got = await momentsCodex.generateImage({ scene: sceneText, character, outFile: file });
+      if (got && got.file) { this.logger?.info?.('[moments] paint ok ms=' + got.ms); return got.file; }
+    } catch (error) { this.logger?.warn?.('[moments] paint error: ' + error.message); }
+    return '';
+  }
+
+  characterCard() {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(this.root, 'data', 'moments', 'character.json'), 'utf8'));
+    } catch { return null; }
   }
 
   queueDraft(draft, account, settings, extra, withImage = settings.withImage, photo = '') {

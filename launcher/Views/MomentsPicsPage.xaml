@@ -118,6 +118,11 @@
                             <ComboBoxItem Tag="deepseek" Content="DeepSeek（默认）" />
                             <ComboBoxItem Tag="codex" Content="Codex（看图）" />
                         </ComboBox>
+                        <TextBlock Text="配图来源" Style="{StaticResource Small}" VerticalAlignment="Center" Margin="16,0,0,0" />
+                        <ComboBox x:Name="CmbSource" Width="180" Margin="8,0,0,0">
+                            <ComboBoxItem Tag="weibo" Content="微博图（快）" />
+                            <ComboBoxItem Tag="codex" Content="Codex 出图（慢，同一个人）" />
+                        </ComboBox>
                         <Button x:Name="BtnSave" Content="保存" Style="{StaticResource Ghost}" Margin="8,0,0,0" Click="OnSave" />
                         <TextBlock x:Name="SaveText" Style="{StaticResource Small}" Margin="10,0,0,0" VerticalAlignment="Center" Text="" />
                     </StackPanel>

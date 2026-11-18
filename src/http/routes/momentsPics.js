@@ -47,7 +47,7 @@ module.exports = function register(router) {
     const m = runtime.config.moments || {};
     return {
       ok: true,
-      writer: m.writer === 'codex' ? 'codex' : 'deepseek',
+      writer: m.writer === 'codex' ? 'codex' : 'deepseek', imageSource: m.imageSource === 'codex' ? 'codex' : 'weibo',
       preferNoPerson: m.preferNoPerson !== false,
       allowRepeat: m.allowRepeat !== false,
       dir: selfDir(runtime),
@@ -117,6 +117,7 @@ module.exports = function register(router) {
     if (body.writer !== undefined) patch['moments.writer'] = body.writer === 'codex' ? 'codex' : 'deepseek';
     if (typeof body.preferNoPerson === 'boolean') patch['moments.preferNoPerson'] = body.preferNoPerson;
     if (typeof body.allowRepeat === 'boolean') patch['moments.allowRepeat'] = body.allowRepeat;
+    if (body.imageSource !== undefined) patch['moments.imageSource'] = body.imageSource === 'codex' ? 'codex' : 'weibo';
     if (Object.keys(patch).length) applyConfigPatch(runtime, patch);
     return json(res, 200, snapshot(runtime));
   });
