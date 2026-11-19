@@ -184,7 +184,8 @@ test('ensureSend：命中提醒且开必发时，模型没写标记也按语气�
 
 test('缓存 usage：OpenCode 的 cache_read / cached_tokens、DeepSeek 的 prompt_cache_hit_tokens 都能读到', () => {
   const call = (usage) => {
-    const ctx = { usageSeq: 0, usageEvents: [] };
+    const ctx = Object.create(DeepSeekClient.prototype);
+    ctx.usageSeq = 0; ctx.usageEvents = []; ctx.config = { paths: {} }; ctx.logger = undefined;
     DeepSeekClient.prototype._recordUsage.call(ctx, { usage });
     return ctx.lastUsage;
   };

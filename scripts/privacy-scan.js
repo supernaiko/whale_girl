@@ -62,7 +62,7 @@ function mask(value) {
 function textRules() {
   const names = new Set(
     [process.env.USERNAME, (process.env.USERPROFILE || '').split(/[\\/]/).pop()]
-      .filter((s) => s && s.length >= 2),
+      .filter((s) => s && s.length >= 1),
   );
   return [
     { name: '密钥', re: /\bsk-[A-Za-z0-9]{16,}/g },
