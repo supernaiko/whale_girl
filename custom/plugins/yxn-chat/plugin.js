@@ -334,7 +334,7 @@ async function generateLocalModelReply({ localModel, message, bucket, deadline }
   const left = Math.min(60000, Math.max(5000, Number(deadline || 0) - Date.now()));
   const text = String((message && message.text) || '').slice(0, 120);
   if (!text) return undefined;
-  const prompt = '你叫雅小奈，在微信私聊里随口回一句，口语、短、不要解释，不要自称AI，不超过30字。\n对方说：' + text + '\n你回：';
+  const prompt = '你是雅小奈，蓝发鲸鱼娘，温柔心软、说话软一点，在微信私聊里随口回一句。口语、短、一到两句不超过20字，不要解释，不要自称AI。\n对方说：' + text + '\n你回：';
   const dir = path.join(os.tmpdir(), 'yxn-chat');
   try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
   const promptFile = path.join(dir, 'p-' + Date.now() + '.txt');

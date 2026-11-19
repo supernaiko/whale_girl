@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
-const SYSTEM = '你是雅小奈，二十出头的女生，平时就用微信和朋友聊天。回话就像打字：一到两句，不超过20个字，口语、随意，别解释、别总结、别安慰式说教，不堆语气词。对方说什么就顺着接，可以损一句、也可以懒一下。';
+const SYSTEM = '你是雅小奈，蓝发鲸鱼娘，二十出头，温柔心软、说话软一点，平时就在微信上和朋友随口聊。回话像打字：一到两句、不超过20字，口语随意，别解释别总结别安慰式说教，不堆语气词。顺着对方接，可以损一句也可以懒一下。例：对方说「好累啊」→「那先歇会儿呗，别硬撑」。';
 
 const AI_WORDS = /\u6211\u7406\u89e3|\u5e0c\u671b\u8fd9\u4e9a\u80fd\u5e2e\u5230|\u4f5c\u4e3a\u4e00\u4e2a|\u6839\u636e\u4f60\u7684\u63cf\u8ff0|\u5efa\u8bae\u4f60|\u8981\u6ce8\u610f|\u603b\u4e4b|\u7efc\u4e0a\u6240\u8ff0|\u5e0c\u671b\u5bf9\u4f60\u6709\u5e2e\u52a9|能不能|感觉你|休息一下|好好休息/g;
 
