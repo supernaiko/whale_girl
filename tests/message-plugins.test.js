@@ -139,7 +139,9 @@ test('installed Wasm can wake an unaddressed group message; disabling restores d
   const { Bot } = require('../src/pipeline/chat');
   const { Store } = require('../src/memory/store');
   const { DEFAULT_CONFIG } = require('../src/infra/config');
-  const { plugins, root, grant } = fixture(t, undefined, { pluginBudgetMs: 5000 });
+  const { plugins, root, grant } = fixture(t, undefined, {
+    pluginBudgetMs: 5000, hookBudgetMs: 5000, messageBudgetMs: 5000,
+  });
   const flowFile = path.join(root, 'test-flow.flow.json');
   const flow = JSON.parse(fs.readFileSync(flowFile));
   flow.hooks = ['chat.pre_reply'];
