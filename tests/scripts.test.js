@@ -182,7 +182,7 @@ test('安装包只在第二位版本号增加（新增功能）时构建', () =>
 });
 
 test('引用回复默认关闭（开着的话每条要多走一遍 UI，回复明显变慢）', () => {
-  const bundled = path.join(root, 'runtime/python/python.exe');
+  const bundled = path.join(root, 'app/runtime/python/python.exe');
   const python = process.env.WHALE_TEST_PYTHON || (fs.existsSync(bundled) ? bundled : 'python');
   const behavior = spawnSync(python, ['-B', path.join(root, 'tests/test_refactor_t13_runtime.py'),
     'DefaultSafetyTests.test_quote_reply_default_configured_and_reload',

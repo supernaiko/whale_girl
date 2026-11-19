@@ -144,7 +144,7 @@ test('UIA 彻底不行时有键盘兜底通道（Ctrl+F 搜索会话 → 粘贴 
  * 所以「必须占前台」是我们自己的 with_window_on_top 造成的，不是 UIA 的要求。
  */
 test('默认后台发送，发完把窗口状态还原（电脑可以正常用）', () => {
-  const bundled = path.join(root, 'runtime/python/python.exe');
+  const bundled = path.join(root, 'app/runtime/python/python.exe');
   const python = process.env.WHALE_TEST_PYTHON || (fs.existsSync(bundled) ? bundled : 'python');
   const behavior = spawnSync(python, ['-B', path.join(root, 'tests/test_refactor_t13_runtime.py'),
     'DefaultSafetyTests.test_background_default_configured_and_restore',

@@ -31,7 +31,7 @@ test('桥接启动保留无参 start_reminder_watch 与可停止的实例', () =
 
 test('实际 app 装配通过群@、身份、错误回执、权限与 shutdown 行为回归', () => {
   assert.match(src, /from reminder_watch import start_reminder_watch/, '模块顶部导入丢了');
-  const bundled = path.join(root, 'runtime/python/python.exe');
+  const bundled = path.join(root, 'app/runtime/python/python.exe');
   const python = process.env.WHALE_TEST_PYTHON || (fs.existsSync(bundled) ? bundled : 'python');
   const output = execFileSync(python,
     ['-B', path.join(root, 'tests/test_engine_reminder_wiring.py'), 'ActualRuntimeReminderTests'], {

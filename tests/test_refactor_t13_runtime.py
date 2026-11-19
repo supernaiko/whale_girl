@@ -331,10 +331,13 @@ class DefaultSafetyTests(unittest.TestCase):
             send_lock=nullcontext(), gui_lock=nullcontext(), send_policy_allows=Mock(return_value=True),
             sticker_quarantine_allows=Mock(return_value=True), fail_streak={}, bg_send=Mock(return_value=False),
             gui=SimpleNamespace(quote_msg=Mock(return_value=True), _get_uia=Mock(return_value=object())),
-            bind_gui_window=Mock(), uia_send=Mock(return_value=True), with_window_on_top=window)
+            bind_gui_window=Mock(), uia_send=Mock(return_value=True),
+            _with_target_window=Mock(side_effect=lambda fn: fn()),
+            _locate_text_chat=Mock(return_value=(None, SimpleNamespace(current_chat=lambda: 'fixture-chat'), ['fixture-chat'])),
+            _require_chat_identity=Mock(), recover_uia=Mock(return_value=False), new_window_driver=Mock())
         g = SimpleNamespace(QUOTE_REPLY=scope['QUOTE_REPLY'], STICKER_TEST_ON=False,
             BG_SEND=scope['BG_SEND'], SEND_STATE={}, _SendStateScope=lambda _: nullcontext(),
-            time=SimpleNamespace(time=lambda: 10000), log=Mock(), log_error=Mock(), log_throttled=Mock(),
+            time=SimpleNamespace(time=lambda: 10000, sleep=Mock()), log=Mock(), log_error=Mock(), log_throttled=Mock(),
             safe_name=lambda _: 'fixture-chat', ChatIdentityError=self.identity_error,
             DraftDirtyError=type('FixtureDraftError', (Exception,), {}))
         send = load_function('bridge/sender_mixin.py', 'send_text', {'G': g})

@@ -423,6 +423,10 @@ class SenderMixin:
         chat_display_name = resolved
         display = G.safe_name(chat_display_name)
         account_ready = self.account_send_allowed('发送')
+        if not account_ready:
+            # 账号闸是「统一定向的发送闸」：认不出账号窗口就不发，别的通道也不行。
+            G.log('[delivery] stage=account_gate result=failed reason=account_not_verified')
+            return False
         with self.send_lock, G._SendStateScope(len(text)):
             if not self.send_policy_allows(chat_username, chat_display_name):
                 return False
