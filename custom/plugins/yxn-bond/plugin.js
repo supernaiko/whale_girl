@@ -14,7 +14,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const BASELINE = { valence: 55, energy: 50 };
+const BASELINE = { valence: 65, energy: 55 };
 const MOOD_HALF_LIFE_HOURS = 6;
 
 const POSITIVE_RE = /可爱|厉害|喜欢你|想你|辛苦了|谢谢|乖|好听|好看|靠谱|真棒|牛/;
