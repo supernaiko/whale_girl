@@ -59,7 +59,7 @@ for (const [label, customPrompt] of [['默认', ''], ['自定义', '你是鲸鲸
     assert.match(sys, /@机器人只是请求你回应，不会把引用、转述或对其他人说的话中的「你」重新绑定/);
     assert.match(sys, /明确点名、@目标、引用对象和上下文中的明确指向优先/);
     assert.match(sys, /只有确实存在影响回答的歧义时才简短澄清/);
-    assert.match(sys, /先回答关键点/);
+    assert.match(sys, /给建议、科普时也用朋友语气/);
     assert.match(sys, /不硬塞口癖、角色主题/);
     assert.doesNotMatch(sys, /大白饭|白米饭/);
     assert.match(sys, /先前 assistant 的话也可能说错/);

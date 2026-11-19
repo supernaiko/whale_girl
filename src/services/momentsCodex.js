@@ -127,7 +127,8 @@ function choose(input = {}) {
  * 用于「固定人物 + 每天场景」的出图：人物长相由角色卡固定，场景由文案决定。
  * 成功返回 { file, ms, raw }，失败返回 null。
  */
-function generateImage({ scene, character, outFile, timeoutMs, frontView = false, reference = '', view = 'auto' }) {
+function generateImage({ scene, character, outFile, timeoutMs, frontView = false, reference = '', view = 'auto', references = null }) {
+  const refList = Array.isArray(references) ? references.filter(f => f && fs.existsSync(f)) : (Array.isArray(reference) ? reference.filter(f => f && fs.existsSync(f)) : []);
   return new Promise((resolve) => {
     if (!available() || !outFile) return resolve(null);
     const dir = path.dirname(outFile);
@@ -136,9 +137,22 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     const who = character && character.look ? character.look : '一个二十多岁的女生，长发，身材偏瘦，日常穿宽松卫衣和牛仔裤';
     const optional = character && character.optional ? character.optional : '';
     let outfit = '';
-    if (character && Array.isArray(character.wardrobe) && character.wardrobe.length) {
-      const seed = String(scene || '').length + new Date().getHours();
-      outfit = character.wardrobe[seed % character.wardrobe.length];
+    let hairstyle = '';
+    let accessory = '';
+    if (character) {
+      const text = String(scene || '');
+      const byScene = character.wardrobeByScene || {};
+      const pick = (list) => (Array.isArray(list) && list.length ? list[Math.floor(Math.random() * list.length)] : '');
+      const key = /睡衣|床上|居家|沙发|家里|房间/.test(text) ? 'home'
+        : /海边|沙滩|海风/.test(text) ? 'beach'
+        : /夜市|晚上|夜里|街边/.test(text) ? 'night'
+        : /公司|上班|开会|加班/.test(text) ? 'work'
+        : /下雨|雨天/.test(text) ? 'rain'
+        : /吃饭|面|火锅|外卖|咖啡|奶茶/.test(text) ? 'meal'
+        : 'street';
+      outfit = pick(byScene[key]) || pick(character.wardrobe) || '';
+      hairstyle = pick(character.hairstyles);
+      accessory = pick(character.accessories);
     }
 
     const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
@@ -147,17 +161,24 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     if (!mode || mode === 'auto') {
       if (/出去玩|旅行|景点|海边|爬山|逛街|打卡|拍照/.test(text)) mode = 'thirdPerson';
       else if (/自拍|对着镜头|正脸|脸/.test(text)) mode = 'selfie';
-      else mode = (text.length % 3 === 0) ? 'selfie' : 'firstPerson';
+      else mode = 'firstPerson';   // 默认手机在自己手里拍眼前，只有明确“自拍/对着镜头”才走 selfie
     }
     const viewRule = (character && character.viewRules && character.viewRules[mode]) || '';
+    let personLine = '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who;
+    if (mode === 'firstPerson' && !frontView) {
+      personLine = '这张不要出现正脸、不要自拍构图。如果画面里出现人，只允许出现她自己的手、腿、袖口、肩膀或背影。她本人是：' + who;
+    }
     const prompt = [
       '用你的图像生成工具画一张照片，并保存到：' + outFile,
       '（必须真的生成图片文件，不要画 SVG，不要复制别的图片。）',
       '',
-      reference ? ('参考图里的人就是主角（第 1 张），脸型、五官、发型、发夹、身材都照着她画，只换场景和衣服。') : '',
-      '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who,
+      refList.length ? ('参考图里的人就是主角（' + refList.length + ' 张都是同一个人），脸型、五官比例、鼻梁鼻头、眼型、唇形、发型都严格照着她画，只换场景和衣服；不要换脸。') : '',
+      personLine,
       optional ? ('细节（不是每张都要出现）：' + optional) : '',
-      outfit ? ('这次穿：' + outfit + '（换别的日子可以换别的衣服，但人不变）') : '',
+      hairstyle ? ('这次发型：' + hairstyle + '（发型可以换，脸不变）') : '',
+      accessory ? ('这次发饰：' + accessory + '（发饰可以换）') : '',
+      outfit ? ('这次穿：' + outfit + '（衣服要和场景对得上，不要穿错场合）') : '',
+      (character && character.wardrobeRule) ? ('服装要求：' + character.wardrobeRule) : '',
       '',
       '这次的生活场景：' + text.slice(0, 200),
     '先把这句话还原成一个具体瞬间（谁在哪、手里拿着什么、眼前第一眼看到什么、光线和时间），再拍那一瞬间。',
@@ -174,13 +195,15 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
             ? '2) 可以正脸、可以笑，但必须是手机前置自拍那种近距离随手拍，不要像别人给你拍的照片；'
             : '2) 不要出现第三人称全身摆拍；日常就是手机在手里拍眼前的东西，最多露手、脚、局部；'),
       '3) 不要出现第二个人，不要网红脸，不要浓妆，不要文字、logo、水印、边框；',
+      '3.5) 第一人称时画面里不要出现手机（拍照的就是手机本体，桌面上不该再放一部），也不要出现正在被举着的相机；',
+      '3.6) 画面里如果有电脑、笔记本、电视、手机屏幕：屏幕里不要出现任何文字、图标、网页或软件界面，一律画成黑屏/息屏/只剩一层冷光或暖光的反光；实在拍不清就让屏幕背对镜头；',
       '4) 画面要能对上这个场景，让人一看就知道在做什么。',
       '完成后只回复一句话：已保存。'
     ].join('\n');
     const started = Date.now();
     let raw = '';
     const extra = [];
-    if (reference && fs.existsSync(reference)) extra.push('-i', reference);
+    for (const f of refList.slice(0, 5)) extra.push('-i', f);
     const child = spawn(process.execPath, [
       codexEntry(), 'exec', '-C', dir, ...extra,
       '-c', 'model_reasoning_effort="low"',

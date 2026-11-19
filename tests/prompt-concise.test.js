@@ -72,10 +72,10 @@ test('话题和观点偏好在默认、自定义人设中独立生效，修改�
     config.persona.opinions = false;
     const disabled = build();
     assert.match(disabled.system, /不主动引出新话题/);
-    assert.match(disabled.system, /必要的澄清不受限制/);
+    assert.match(disabled.system, /追问和澄清不受限制/);
     assert.match(disabled.system, /少主动发表主观立场/);
     assert.match(disabled.system, /仍须纠正事实错误/);
-    assert.match(disabled.system, /不控制无人发消息时的主动发送/);
+    assert.match(disabled.system, /【当前交流偏好】/);
     assert.match(disabled.system, /顶嘴人格：刀子嘴豆腐心/);
     assert.doesNotMatch(disabled.system, /顺着对方说，别反驳/);
     assert.doesNotMatch(disabled.tail, /说清观点和必要理由/);
@@ -97,7 +97,7 @@ test('颜文字提示与发送层统一，关闭硬闸覆盖概率', () => {
   const build = () => buildPromptParts({ config, msg: {} }).system;
   config.chat.emojiChance = 0.8;
   assert.match(build(), /当前用量 80%/);
-  assert.match(build(), /正文不要主动添加/);
+  assert.match(build(), /正文想用就自然用/);
   config.chat.emojiChance = 0.1;
   assert.match(build(), /当前用量 10%/);
   config.persona.emojiLevel = '关';

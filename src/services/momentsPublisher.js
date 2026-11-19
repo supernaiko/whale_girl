@@ -551,14 +551,14 @@ class MomentsPublisher {
 
   async paintFor(sceneText) {
     if (!settingsCodexPaint(this.settings())) return '';
-    let reference = '';
-    try { reference = (this.selfImages() || [])[0] || ''; } catch { /* ignore */ }
+    let references = [];
+    try { references = (this.selfImages() || []).slice(0, 3); } catch { /* ignore */ }
     const settings = this.settings();
     const view = settings.preferNoPerson && !/出去玩|旅行|景点|海边|爬山|逛街|打卡/.test(sceneText) ? 'firstPerson' : 'auto';
     const file = await momentsPaint.paint({
       dataDir: this.config.paths.dataDir,
       scene: sceneText,
-      reference,
+      references,
       view,
       logger: this.logger,
     });
