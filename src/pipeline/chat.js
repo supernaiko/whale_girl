@@ -1999,8 +1999,11 @@ class Bot {
     if (!decision.diaryExpanded && !error && decision.action === 'reply' && !extra && chance > 0 && this.rng() <= chance) {
       // 表情跟着这几句的情绪走：对不上就干脆不发，别硬塞一个和话题无关的脸。
       const spoken = bubbles.join(' ');
+      // 正向语境（开心/卖萌/得意）优先给颜文字，负面（累/难过/骂）与吃这类给 emoji；
+      // 兜底不再纯随机抽颜文字，配不上就空着。
+      const kao = persona.kaomojiTone(spoken, this.rng);
       const tone = emojiTone(spoken, this.rng);
-      extra = tone || (this.rng() < 0.5 ? persona.kaomojiPick(this.rng) : '');
+      extra = kao || tone;
     }
     // 表情在正文截断后追加，必须连同合并时的空格一起占用整轮字数。
     const extraChars = Array.from(extra).length + (bubbles.length >= maxBubbles ? 1 : 0);

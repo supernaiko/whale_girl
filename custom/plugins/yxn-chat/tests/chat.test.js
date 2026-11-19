@@ -126,7 +126,7 @@ test('generate supports off, fallback, probabilistic, disabled buckets and delay
   fs.writeFileSync(f.file('local-model.json'), JSON.stringify({ enabled: true, cmd: 'fixture-command' }));
   assert.deepEqual(await f.generate(greeting), { text: '行，你好呀' });
   assert.deepEqual(f.delays, [1600, 3600]);
-  assert.deepEqual(f.read('brain.json').stats, { sent: 2, picked: 2, skipped: 4 });
+  assert.deepEqual(f.read('brain.json').stats, { sent: 2, picked: 2, skipped: 4, model: 0 });
   assert.equal(f.read('brain.json').buckets.greeting[0].uses, 2);
 });
 

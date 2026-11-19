@@ -21,6 +21,11 @@ namespace WhaleLauncher.Views
         public bool Off { get; set; }
     }
 
+    public sealed class LocalReplyRow
+    {
+        public string Line { get; set; } = "";
+    }
+
     public partial class YxnChatPage : UserControl, IRefreshable
     {
         private static readonly Dictionary<string, string> Titles = new Dictionary<string, string>
@@ -40,6 +45,7 @@ namespace WhaleLauncher.Views
 
         private readonly RuntimeSupervisor _sup;
         private readonly ObservableCollection<ChatBucketRow> _rows = new ObservableCollection<ChatBucketRow>();
+        private readonly ObservableCollection<LocalReplyRow> _replies = new ObservableCollection<LocalReplyRow>();
         private string _mode = "off";
         private readonly List<string> _off = new List<string>();
         private bool _busy;
@@ -50,6 +56,7 @@ namespace WhaleLauncher.Views
             InitializeComponent();
             _sup = sup;
             BucketList.ItemsSource = _rows;
+            ReplyList.ItemsSource = _replies;
             Loaded += async (_, __) => await RefreshAsync();
         }
 
@@ -129,6 +136,31 @@ namespace WhaleLauncher.Views
                     var cmdOk = model.TryGetProperty("cmdExists", out var ce) && ce.ValueKind == JsonValueKind.True;
                     ModelStateText.Text = !ModelEnabledBox.IsChecked.GetValueOrDefault() ? "未启用"
                         : (modelOk && cmdOk) ? "已就绪" : (modelOk ? "缺 llama-cli" : "缺模型文件");
+                }
+
+                var stats = root.TryGetProperty("stats", out var st) ? st : default;
+                if (stats.ValueKind == JsonValueKind.Object)
+                {
+                    var sent = Int(stats, "sent");
+                    var modelN = Int(stats, "model");
+                    var pool = Int(stats, "picked");
+                    var skipped = Int(stats, "skipped");
+                    ReplyStatsText.Text = $"已接 {sent} 句 · 模型 {modelN} · 词库 {pool} · 跳过 {skipped}";
+                }
+
+                _replies.Clear();
+                if (root.TryGetProperty("recent", out var recs) && recs.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var rec in recs.EnumerateArray())
+                    {
+                        var text = Str(rec, "text", "");
+                        if (string.IsNullOrEmpty(text)) continue;
+                        var source = Str(rec, "source", "") == "model" ? "模型" : "词库";
+                        var at = rec.TryGetProperty("at", out var a) && a.ValueKind == JsonValueKind.Number
+                            ? DateTimeOffset.FromUnixTimeMilliseconds((long)a.GetDouble()).ToLocalTime().ToString("MM-dd HH:mm")
+                            : "";
+                        _replies.Add(new LocalReplyRow { Line = $"{source} · {at} · {text}" });
+                    }
                 }
 
                 var sb = new StringBuilder();
@@ -288,5 +320,9 @@ namespace WhaleLauncher.Views
                 : d.ToString();
 
         private static int ParseInt(string s, int d) => int.TryParse(s?.Trim(), out var v) ? v : d;
+
+        private static int Int(JsonElement e, string name)
+            => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+                ? (int)v.GetDouble() : 0;
     }
 }

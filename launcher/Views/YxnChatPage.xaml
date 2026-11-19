@@ -167,6 +167,25 @@
                     </StackPanel>
                 </Border>
 
+                <!-- 本地回复统计 -->
+                <Border Style="{StaticResource Card}" Padding="22,18" Margin="0,16,0,0">
+                    <StackPanel>
+                        <DockPanel LastChildFill="False">
+                            <TextBlock DockPanel.Dock="Left" Text="本地回复统计" Style="{StaticResource H2}" />
+                            <TextBlock DockPanel.Dock="Right" x:Name="ReplyStatsText" Style="{StaticResource Small}" Text="—" VerticalAlignment="Center" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource Small}" Margin="0,6,0,10" TextWrapping="Wrap"
+                                   Text="只统计「本地模型」和「词库」接的话，DeepSeek 回复不算。模型 = 用本地大模型生成；词库 = 从学到的句子里抽。" />
+                        <ItemsControl x:Name="ReplyList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Margin="0,3" Style="{StaticResource Small}" Text="{Binding Line}" TextWrapping="Wrap" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
                 <!-- 日志 -->
                 <Border Style="{StaticResource Card}" Padding="22,18" Margin="0,16,0,0">
                     <StackPanel>

@@ -30,8 +30,19 @@ const KAOMOJI = [
   '(๑•̀ㅂ•́)و✧', 'ᕕ( ᐛ )ᕗ', '( ˘ω˘ )', '(๑>؂<๑)', '（＝ω＝）',
   '(´▽｀)ノ♪', 'o(*^▽^*)o', '(＾▽＾)', '٩(๑^o^๑)۶', '(◍•ᴗ•◍)',
   '(｡･∀･)ﾉﾞ', '～(￣▽￣～)~', '(◕ω◕)', 'o(≧▽≦)o',
+  '(≧∀≦)', '(ノ◕ヮ◕)ノ*:・゚✧', '(￣▽￣)ノ', '(๑˃ᴗ˂)ﻭ', '(っ´▽`)っ',
+  '(｡♥‿♥｡)', '(☆▽☆)', '(*≧ω≦)', '(￣ω￣)', '(⌒‿⌒)', '(｡•̀ᴗ-)✧',
 ];
-const EMOJI_LEVEL_CHANCE = { 关: 0, 少: 0.12, 正常: 0.3, 多: 0.65 };
+
+// 按刚说的话挑颜文字：和 emojiTone 一样按上下文配，只在正向/活泼/卖萌语境里给，
+// 负面或中性语境返回空串，交给 emojiTone 的 emoji（🥲😞）或干脆不加。
+const KAOMOJI_TONES = [
+  { re: /(哈哈|笑死|好耶|开心|太棒|舒服|兴奋|期待|真好|超棒)/, list: ['(＾▽＾)', 'o(*^▽^*)o', '٩(๑^o^๑)۶', 'o(≧▽≦)o', '～(￣▽￣～)~', '(≧∀≦)'] },
+  { re: /(可爱|猫|软乎乎|抱抱|蹭|贴贴|喜欢你|好萌)/, list: ['( ˘ω˘ )', '(◍•ᴗ•◍)', '(๑>؂<๑)', '(っ´▽`)っ', '(｡♥‿♥｡)'] },
+  { re: /(厉害|得意|赢了|搞定|成了|真棒)/, list: ['(￣ω￣)', '(｡•̀ᴗ-)✧', '(⌒‿⌒)', '(๑•̀ㅂ•́)و✧'] },
+];
+
+const EMOJI_LEVEL_CHANCE = { 关: 0, 少: 0.2, 正常: 0.5, 多: 0.8 };
 
 function emojiChanceFor(config) {
   const level = String((config && config.persona && config.persona.emojiLevel) || '正常').trim();
@@ -45,11 +56,22 @@ function emojiLines(config) {
   const chance = Math.round(emojiChanceFor(config) * 100);
   return '【颜文字 / emoji】' + (chance === 0
     ? '完全不要用（emoji 和颜文字都不许出现）'
-    : `当前用量 ${chance}%，由发送层按概率控制；正文想用就自然用一两个，别每条都堆，也别跟发送层重复叠加。`);
+    : `你在句尾可以自然带一个贴合此刻心情的颜文字或 emoji（开心就 (＾▽＾) 或 ✨，累就 🥱，难过就 🥲，卖萌就 ( ˘ω˘ )）。\n` +
+      '- 心情轻快、开心、撒娇、卖萌时用得多一点；认真说事、安慰人、长篇解释时少用或不用。\n' +
+      '- 每次最多一两个，别每条都堆；语气对得上才加，对不上宁可不加。');
 }
 
 function kaomojiPick(rng = Math.random) {
   return KAOMOJI[Math.floor(rng() * KAOMOJI.length)] || KAOMOJI[0];
 }
 
-module.exports = { STANDING_ROAST, conversationPreferences, emojiLines, emojiChanceFor, kaomojiPick, KAOMOJI, EMOJI_LEVEL_CHANCE };
+function kaomojiTone(text, rng = Math.random) {
+  const s = String(text || '');
+  if (!s || /[?？]\s*$/.test(s)) return '';
+  for (const tone of KAOMOJI_TONES) {
+    if (tone.re.test(s)) return tone.list[Math.floor(rng() * tone.list.length)];
+  }
+  return '';
+}
+
+module.exports = { STANDING_ROAST, conversationPreferences, emojiLines, emojiChanceFor, kaomojiPick, kaomojiTone, KAOMOJI, KAOMOJI_TONES, EMOJI_LEVEL_CHANCE };

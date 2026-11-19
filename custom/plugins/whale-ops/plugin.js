@@ -272,8 +272,8 @@ function natural(raw) {
     if (arg) return '找 ' + arg;
   }
 
-  if (/(?:用|让)\s*codex/i.test(t)) {
-    return 'codex ' + t.replace(/^.*?(?:用|让)\s*codex[\s，,：:、]*/i, '').trim();
+  if (/(?:用|让|交给)\s*codex/i.test(t)) {
+    return 'codex ' + t.replace(/^.*?(?:用|让|交给)\s*codex[\s，,：:、]*/i, '').trim();
   }
 
   if (/让\s*(?:dsh|deepseek)/i.test(t)) {
@@ -367,7 +367,7 @@ function safeDest(settings, input) {
 }
 
 // 消息里出现这些名词就说明多半在说电脑上的事，即使没有动词也交给模型判断
-const COMPUTER_NOUNS = /(表格|xlsx|csv|文档|文件|文件夹|目录|桌面|下载|dsh|记事本|计算器|资源管理器|窗口|程序|软件|日志)/i;
+const COMPUTER_NOUNS = /(表格|xlsx|csv|文档|文件|文件夹|目录|桌面|下载|dsh|codex|gpt|记事本|计算器|资源管理器|窗口|程序|软件|日志)/i;
 
 function relatedToComputer(text) {
   const t = String(text || '').trim();
@@ -1320,7 +1320,7 @@ exports.hooks = {
       flushPending(ctx.whale, message.chatId, message.chatType).catch(() => {});
       const system = typeof ctx.system === 'string' ? ctx.system : '';
       if (!system || system.includes('【能力事实】')) return {};
-      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 DSH 跑任务。被问能不能读文件、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
+      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
     } catch {
       return {};
     }

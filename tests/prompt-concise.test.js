@@ -96,11 +96,11 @@ test('颜文字提示与发送层统一，关闭硬闸覆盖概率', () => {
   config.persona.emojiLevel = '正常';
   const build = () => buildPromptParts({ config, msg: {} }).system;
   config.chat.emojiChance = 0.8;
-  assert.match(build(), /当前用量 80%/);
-  assert.match(build(), /正文想用就自然用/);
+  assert.match(build(), /句尾可以自然带一个/);
+  assert.match(build(), /开心就 \(＾▽＾\)/);
   config.chat.emojiChance = 0.1;
-  assert.match(build(), /当前用量 10%/);
+  assert.match(build(), /句尾可以自然带一个/);
   config.persona.emojiLevel = '关';
   assert.match(build(), /完全不要用/);
-  assert.doesNotMatch(build(), /当前用量 10%/);
+  assert.doesNotMatch(build(), /句尾可以自然带一个/);
 });

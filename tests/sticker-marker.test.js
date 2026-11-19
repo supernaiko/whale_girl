@@ -21,7 +21,7 @@ function fin(text, decision = {}) {
     globalReplyTimes: [],
     config: {
       features: {},
-      persona: { name: '测试角色' },
+      persona: { name: '测试角色', emojiLevel: '关' },
       chat: { maxBubbles: 2, privateMaxChars: 200, groupMaxChars: 200 },
     },
     store: { appendMessage() {}, checkpoint() {} },

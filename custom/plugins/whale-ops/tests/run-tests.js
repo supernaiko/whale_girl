@@ -378,6 +378,29 @@ test('解析器先失败时交给模型兜底', async () => {
     assert.strictEqual((await pre('你可以调用dsh吗', { overrides: NAT })).action, 'wake');
   });
 
+  test('「用 codex 在桌面建文件」触发 codex 路由', async () => {
+    const first = await gen('用 codex 在桌面建个 md 文件', { overrides: NAT });
+    assert.doesNotMatch(first.output.text, /回「确认」|没听懂/);
+  });
+
+  test('「交给 codex 改脚本」也触发 codex 路由', async () => {
+    const first = await gen('交给 codex 把桌面那个脚本改好', { overrides: NAT });
+    assert.doesNotMatch(first.output.text, /回「确认」|没听懂/);
+  });
+
+  test('能力事实块提到 Codex 与 DSH', async () => {
+    const hook = plugin.hooks['chat.prompt'];
+    const ctx = {
+      settings: settings({ prefix: '' }),
+      message: { senderId: OWNER, chatId: 'c1', chatType: 'private' },
+      system: 'base',
+      whale: { api: async () => ({}), sendText: async () => ({ ok: true }), paths: { pluginData: tmp } },
+    };
+    const out = await hook(ctx);
+    assert.match(out.system, /Codex/);
+    assert.match(out.system, /DSH/);
+  });
+
   for (const [name, fn] of cases) {
     try {
       await fn();

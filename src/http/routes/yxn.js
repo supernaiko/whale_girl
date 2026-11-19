@@ -138,9 +138,29 @@ function chatSnapshot(dataDir) {
   const modelFile = model.modelPath ? fs.existsSync(model.modelPath) : false;
   const cmdFile = model.cmd ? fs.existsSync(model.cmd.split(' ')[0].replace(/^"|"$/g, '')) : false;
 
+  const rawStats = (brain.stats && typeof brain.stats === 'object') ? brain.stats : {};
+  const stats = {
+    sent: Number(rawStats.sent) || 0,
+    picked: Number(rawStats.picked) || 0,
+    skipped: Number(rawStats.skipped) || 0,
+    model: Number(rawStats.model) || 0,
+  };
+
+  // replies.jsonl 记录每一次本地回复（source: model=本地大模型 / pool=词库抽取），取最近 50 条展示
+  let recent = [];
+  try {
+    const lines = fs.readFileSync(path.join(dir, 'replies.jsonl'), 'utf8').split('\n').filter(Boolean);
+    recent = lines.slice(-50)
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter((r) => r && typeof r.text === 'string')
+      .reverse();
+  } catch { recent = []; }
+
   return {
     config,
     buckets: rows,
+    stats,
+    recent,
     totals: {
       count: rows.reduce((a, b) => a + b.count, 0),
       buckets: rows.filter((r) => r.count > 0).length,

@@ -152,7 +152,7 @@ function loadConfig(file, settings) {
 }
 
 function newBrain() {
-  return { schema: 1, personaTraits: { ...DEFAULT_TRAITS }, buckets: {}, stats: { sent: 0, picked: 0, skipped: 0 } };
+  return { schema: 1, personaTraits: { ...DEFAULT_TRAITS }, buckets: {}, stats: { sent: 0, picked: 0, skipped: 0, model: 0 } };
 }
 
 function addReply(brain, { text, bucket, source, at }) {
@@ -249,6 +249,10 @@ function logActivity(file, line) {
   writeAtomic(file, [...previous.slice(-99), line].join('\n') + '\n');
 }
 
+function logReply(file, entry) {
+  try { fs.appendFileSync(file, JSON.stringify(entry) + '\n', 'utf8'); } catch { /* 统计日志失败不影响回复 */ }
+}
+
 async function openStore(ctx, now) {
   const { pluginData, appData } = ctx.whale.paths;
   fs.mkdirSync(pluginData, { recursive: true });
@@ -256,6 +260,7 @@ async function openStore(ctx, now) {
     brain: path.join(pluginData, 'brain.json'), pool: path.join(pluginData, 'pool.jsonl'),
     config: path.join(pluginData, 'config.json'), model: path.join(pluginData, 'local-model.json'),
     activity: path.join(pluginData, 'activity.log'), pending: path.join(pluginData, '.pool-commit.tmp'),
+    replies: path.join(pluginData, 'replies.jsonl'),
   };
   if (!fs.existsSync(files.pool)) fs.appendFileSync(files.pool, '');
   recoverCommit(files);
@@ -400,12 +405,14 @@ function createHooks({
       );
       let reply;
       let text;
+      let source = '';
       if (shouldReply) {
         const modelText = localModel.enabled === true
           ? tuneText(await generateLocalModelReply({ localModel, message: ctx.message, bucket, deadline }) ?? '')
           : '';
         reply = modelText ? undefined : sampleReply(brain.buckets[bucket], brain.personaTraits, now, rng);
         text = modelText || tuneText(reply?.text ?? '');
+        source = modelText ? 'model' : (reply ? 'pool' : '');
         if (UNSAFE_TEXT.test(text)) text = '';
         if (text) {
           const delay = calculateDelayMs(text, config, deadline - clock(), rng);
@@ -416,11 +423,13 @@ function createHooks({
             brain.stats.picked += 1;
           }
           brain.stats.sent += 1;
+          if (source === 'model') brain.stats.model += 1;
         }
       }
       if (!text && mayReply) brain.stats.skipped += 1;
       const learned = await learnFinalReply(store, ctx.finalText, clock(), recentLearned);
       if (mayReply || learned) commitReplies(files, brain, learned ? [learned] : []);
+      if (text) logReply(files.replies, { at: clock(), bucket, source, text });
       return text ? { text } : {};
     },
     'timer.tick': async ctx => {

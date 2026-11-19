@@ -10,6 +10,7 @@ module.exports = {
   ...require('./demo'),
   emojiChanceFor: expression.emojiChanceFor,
   kaomojiPick: expression.kaomojiPick,
+  kaomojiTone: expression.kaomojiTone,
   KAOMOJI: expression.KAOMOJI,
   EMOJI_LEVEL_CHANCE: expression.EMOJI_LEVEL_CHANCE,
 };

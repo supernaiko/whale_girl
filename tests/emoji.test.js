@@ -16,14 +16,14 @@ const cfgWith = (level, chance) => ({ persona: { emojiLevel: level }, chat: { em
 
 test('四档「颜文字用量」对应四个真实概率', () => {
   assert.equal(persona.emojiChanceFor(cfgWith('关', 0)), 0);
-  assert.equal(persona.emojiChanceFor(cfgWith('少', 0)), 0.12);
-  assert.equal(persona.emojiChanceFor(cfgWith('正常', 0)), 0.3);
-  assert.equal(persona.emojiChanceFor(cfgWith('多', 0)), 0.65);
+  assert.equal(persona.emojiChanceFor(cfgWith('少', 0)), 0.2);
+  assert.equal(persona.emojiChanceFor(cfgWith('正常', 0)), 0.5);
+  assert.equal(persona.emojiChanceFor(cfgWith('多', 0)), 0.8);
 });
 
 test('没调过档位时按「正常」算，不是永远不说话', () => {
-  assert.equal(persona.emojiChanceFor({ persona: {}, chat: { emojiChance: 0 } }), 0.3);
-  assert.equal(persona.emojiChanceFor({}), 0.3);
+  assert.equal(persona.emojiChanceFor({ persona: {}, chat: { emojiChance: 0 } }), 0.5);
+  assert.equal(persona.emojiChanceFor({}), 0.5);
 });
 
 test('「关」是硬关，压过手动概率', () => {
@@ -43,6 +43,14 @@ test('颜文字池里有真的颜文字，不是占位符', () => {
     assert.ok(/[()（）]/.test(k) || /qwq|ᕕ/.test(k), '看起来不像颜文字：' + k);
   }
   assert.equal(typeof persona.kaomojiPick(() => 0.5), 'string');
+});
+
+test('kaomojiTone 按上下文配颜文字，负面/问句/中性返回空', () => {
+  assert.ok(persona.kaomojiTone('好耶，抢到票了！').length >= 3, '开心语境应给颜文字');
+  assert.ok(persona.kaomojiTone('好可爱，贴贴～').length >= 3, '卖萌语境应给颜文字');
+  assert.equal(persona.kaomojiTone('今天怎么样？'), '', '问句不加');
+  assert.equal(persona.kaomojiTone('明天记得交报告'), '', '中性不加');
+  assert.equal(persona.kaomojiTone('我有点难过'), '', '负面语境交给 emoji，颜文字不给');
 });
 
 // 「关时不加料」「多加颜文字」「已带 emoji 跳过」三类行为在 bot.test.js 的

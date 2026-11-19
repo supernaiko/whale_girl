@@ -88,7 +88,7 @@ test('追加表情按整轮剩余字数决定，完整保留能放下的表情',
             for (const size of ['short', 'boundary', 'full']) {
               bot.rng = () => 0;
               const decision = { action: 'reply', key: 'web:' + chatType, msg: { chatType, discussion, text: '原消息' } };
-              const prefix = source === 'tone-emoji' ? '开心' : '好呀';
+              const prefix = source === 'tone-emoji' ? '好累' : source === 'kaomoji' ? '好开心' : '好呀';
               const length = size === 'full' ? limit : limit - 1;
               const body = size === 'short' ? prefix : prefix + '答'.repeat(length - prefix.length);
               const bubbles = bot.finalize(decision, body + (source === 'model-emoji' ? '🐋' : ''));
@@ -98,7 +98,7 @@ test('追加表情按整轮剩余字数决定，完整保留能放下的表情',
               if (size === 'full' || (size === 'boundary' && (maxBubbles === 1 || source === 'kaomoji'))) {
                 assert.deepEqual(bubbles, [body], label);
               } else {
-                const extra = { kaomoji: '(๑•̀ㅂ•́)و✧', 'tone-emoji': '😄', 'model-emoji': '🐋' }[source];
+                const extra = { kaomoji: '(＾▽＾)', 'tone-emoji': '🥱', 'model-emoji': '🐋' }[source];
                 assert.deepEqual(bubbles, maxBubbles === 1 ? [body + ' ' + extra] : [body, extra], label);
               }
             }
