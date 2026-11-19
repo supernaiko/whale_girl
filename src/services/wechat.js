@@ -129,7 +129,7 @@ function wechatAccountsPayload(runtime) {
     active: false,
   }));
   const wanted = String((config.wechat && config.wechat.account) || '').trim();
-  const current = matchAccountDir(accounts, wanted) || (wanted ? '' : '');
+  const current = matchAccountDir(accounts, wanted) || '';
   for (const a of accounts) a.active = a.account === current;
   const gw = gateways.get('wechat');
   const bridge = gw ? gw.status().bridge : null;

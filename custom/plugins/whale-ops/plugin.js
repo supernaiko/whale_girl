@@ -28,7 +28,6 @@ const { spawn, execFileSync } = require('node:child_process');
 const CODEX_BIN = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
   'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
 
-const APP_NAME = '电脑助手';
 const MAX_REPLY = 1200;
 const MAX_READ = 64 * 1024;
 const MAX_LIST = 60;

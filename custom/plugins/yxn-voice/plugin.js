@@ -17,8 +17,6 @@ const path = require('node:path');
 const MAX_SAMPLES = 200;
 const OPENERS = ['嗯', '行', '好', '哦', '诶', '啊', '哈', '那个', '不是', '没有', '我'];
 
-function num(v, d) { return Number.isFinite(Number(v)) ? Number(v) : d; }
-
 function dataFile(input) {
   const root = input && input.paths && input.paths.pluginData;
   return root ? path.join(root, 'voice.json') : '';

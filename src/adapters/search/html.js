@@ -3,14 +3,13 @@
 function decodeEntities(s) {
   // 单次扫描解码：先解 &amp; 会造出新的 &#60;，第二遍再解就等于把用户输入
   // 双重反转义（CodeQL double-escaping 的成因）。这里一遍过，不回头。
-  return String(s || '').replace(/&(?:(#x[0-9a-f]+|#\d+)|(nbsp|ensp|amp|lt|gt|quot|#39));/gi, (all, num, name) => {
+  return String(s || '').replace(/&(?:(#x[0-9a-f]+|#\d+)|(nbsp|ensp|amp|lt|gt|quot));/gi, (all, num, name) => {
     const key = String(name || '').toLowerCase();
     if (key === 'nbsp' || key === 'ensp') return ' ';
     if (key === 'amp') return '&';
     if (key === 'lt') return '<';
     if (key === 'gt') return '>';
     if (key === 'quot') return '"';
-    if (key === '#39') return "'";
     if (!num) return all;
     try {
       return String.fromCodePoint(num[1].toLowerCase() === 'x' ? parseInt(num.slice(2), 16) : Number(num.slice(1)));
