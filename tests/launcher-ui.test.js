@@ -142,17 +142,15 @@ test('顶栏有太阳/月亮开关，背景图有独立图层和模糊', () => {
   assert.ok(main.includes('<BlurEffect'), '背景图应该做模糊，避免抢文字');
 });
 
-test('侧栏有官网和赞助入口，链接直连公开地址', () => {
+test('侧栏不再有官网/赞助/检查更新入口（本项目已自维护，不再链接上游）', () => {
   const main = readLauncher('MainWindow.xaml');
   const code = readLauncher('MainWindow.xaml.cs');
-  for (const name of ['BtnWebsite', 'BtnSponsor']) {
-    assert.ok(main.includes('x:Name="' + name + '"'), '侧栏缺少按钮：' + name);
+  for (const name of ['BtnWebsite', 'BtnSponsor', 'BtnUpdate']) {
+    assert.ok(!main.includes('x:Name="' + name + '"'), '侧栏不应再有按钮：' + name);
   }
-  assert.ok(main.includes('Click="OnOpenWebsite"'), '官网按钮没接事件');
-  assert.ok(main.includes('Click="OnOpenSponsor"'), '赞助按钮没接事件');
-  assert.match(code, /OfficialSite\s*=\s*"https:\/\/bot\.zyyc\.cc\/"/, '官网地址应为正式域名');
-  assert.match(code, /SponsorPage\s*=\s*"https:\/\/afdian\.com\/a\/Banan1ce"/, '赞助地址应为团队爱发电主页');
-  assert.match(code, /ProcessStartInfo\(url\)\s*\{\s*UseShellExecute\s*=\s*true\s*\}/, '链接应交给系统默认浏览器');
+  for (const token of ['OnOpenWebsite', 'OnOpenSponsor', 'OfficialSite', 'SponsorPage']) {
+    assert.ok(!code.includes(token), 'MainWindow.xaml.cs 不应再引用：' + token);
+  }
 });
 
 test('背景模糊与透明度可调，玻璃面板 + 自动蒙版保证文字可读', () => {
