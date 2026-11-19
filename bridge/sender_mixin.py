@@ -324,6 +324,7 @@ class SenderMixin:
         saved_clip = get_clip()
         try:
             if win32gui.GetForegroundWindow() != hwnd:
+                G.log('键盘通道：抢不到前台，放弃发送')
                 return False
             self._require_chat_identity(uia, chat_display_name, keys, '键盘通道')
             set_clip(text)

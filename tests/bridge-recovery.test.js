@@ -20,9 +20,10 @@ const root = path.resolve(__dirname, '..');
 const bridge = require('./helpers/bridge-source');
 
 test('每次发送都会问一次 UIA 引擎，让它有机会自愈', () => {
-  const fn = bridge.slice(bridge.indexOf('def uia_send'), bridge.indexOf('def recover_uia'));
-  assert.match(fn, /gui\._get_uia\(\)/, 'uia_send 里要重新获取引擎，而不是只用缓存');
-  assert.match(fn, /UIA_CACHE\[['"]u['"]\] = u/);
+  // Codex 重构后 UIA 获取下沉到 targeting.locate_and_activate（uia_send → _locate_text_chat →
+  // locate_and_activate）：第一轮用缓存、重试轮 refresh=True 强制重写 gate byte，自愈能力没丢。
+  assert.match(bridge, /gui\._get_uia\(refresh=round_no > 1\)/, '重试轮要 refresh=True 重写 gate byte，别永远用缓存');
+  assert.match(bridge, /UIA_CACHE\[['"]u['"]\] = uia/, '拿到引擎后要更新缓存');
 });
 
 test('发送失败后会强制重新热激活并重试一次（不用重启桥接）', () => {
@@ -217,13 +218,16 @@ test('心跳只读 UIA 缓存，连续失败只暂停后台探测而不重建驱
 test('键盘兜底必须先核对会话，防发错人', () => {
   const fn = bridge.slice(bridge.indexOf('def keyboard_send'));
   const body = fn.slice(0, fn.indexOf('\n    def send_text', 10));
-  assert.match(body, /def confirmed_target/, '要有核对函数');
-  assert.match(body, /current_chat\(\)/, '用 UIA 的只读能力读当前会话名');
-  assert.match(body, /为防发错人/, '不匹配要明确拒绝并写日志');
-  // 顺序：先核对，再粘贴正文
-  const iCheck = body.indexOf('confirmed_target()');
+  // 核对逻辑抽成了 _require_chat_identity（window_mixin），键盘通道在粘贴正文前必须调用它。
+  assert.match(body, /_require_chat_identity\(uia, chat_display_name, keys, ['"]键盘通道['"]\)/, '粘贴前要核对目标会话');
+  const iCheck = body.indexOf('_require_chat_identity(');
   const iPasteBody = body.indexOf('set_clip(text)');
   assert.ok(iCheck > 0 && iPasteBody > 0 && iCheck < iPasteBody,
     '必须先核对目标会话，再粘贴正文');
-  assert.match(body, /读不到当前会话名/, '读不到会话名时也要放弃，不能盲发');
+  // 核对函数本身：用 UIA 的只读能力读当前会话名，对不上/读不到就拒绝。
+  const idfn = bridge.slice(bridge.indexOf('def _require_chat_identity'));
+  const idbody = idfn.slice(0, idfn.indexOf('\n    def ', 10));
+  assert.match(idbody, /current_chat\(\)/, '用 UIA 的只读能力读当前会话名');
+  assert.match(idbody, /读不到当前会话名/, '读不到会话名时也要放弃，不能盲发');
+  assert.match(idbody, /不是目标，拒绝发送/, '不匹配要明确拒绝并写日志');
 });
