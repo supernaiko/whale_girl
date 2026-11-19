@@ -85,3 +85,9 @@ promo-video/
 /_*.log
 /_*.err
 /_*.ps1
+
+_backup/
+_fulltest*.txt
+_report_*.md
+_task_*.md
+
