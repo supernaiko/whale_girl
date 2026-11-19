@@ -135,4 +135,23 @@ async function download(url, destDir) {
   return file;
 }
 
-module.exports = { searchPosts, download };
+// 微博热搜榜：给「主动搭话」当话题线索。
+// 接口 weibo.com/ajax/side/hotSearch 需要登录态 cookie；失败返回空数组，绝不抛，让搭话降级到纯时间/最近聊天。
+async function hotSearch({ cookie = '', limit = 12 } = {}) {
+  try {
+    const res = await get('https://weibo.com/ajax/side/hotSearch', { cookie, referer: 'https://weibo.com/', timeout: 15000 });
+    if (res.status !== 200 || !res.body) return [];
+    const data = JSON.parse(res.body);
+    const list = data?.data?.realtime;
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter(it => it && (it.word || it.note))
+      .map(it => ({ word: String(it.note || it.word).replace(/^#+|#+$/g, '').trim(), num: Number(it.num) || 0 }))
+      .filter(it => it.word && it.word.length >= 2 && it.word.length <= 20)
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}
+
+module.exports = { searchPosts, download, hotSearch };

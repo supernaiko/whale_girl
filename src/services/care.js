@@ -153,7 +153,7 @@ function pickTemplate(rng = Math.random) {
  * 生成「主动搭话」用的提示词。
  * 参考最近聊过什么：别重复、接着话头问，比干巴巴一句「在干啥」自然。
  */
-function buildCarePrompt({ persona = {}, recent = [], name = '', hour = null } = {}) {
+function buildCarePrompt({ persona = {}, recent = [], name = '', hour = null, topics = [] } = {}) {
   const who = String(persona.name || '鲸鲸');
   const master = String(persona.ownerName || '主人');
   const lines = [
@@ -179,6 +179,11 @@ function buildCarePrompt({ persona = {}, recent = [], name = '', hour = null } =
     lines.push(`- 现在是${part}（${dateLine}），语气跟这个时间搭一点；工作日和周末的口气可以不一样。`);
     if (now.getMonth() === 11 && now.getDate() >= 20 && now.getDate() <= 26) lines.push('- 快到圣诞节了，可以顺嘴提一句。');
     if (now.getMonth() === 0 && now.getDate() <= 3) lines.push('- 刚过元旦，可以顺嘴提一句新年。');
+  }
+  const hot = Array.isArray(topics) ? topics.filter(t => t && (t.word || t.title)).slice(0, 8) : [];
+  if (hot.length) {
+    const hotLine = hot.map(t => t.word || t.title).join('、');
+    lines.push(`- 今天网上聊得比较多的：${hotLine}。这只是话题线索，挑一个和对方能搭上的，用你自己的口气自然带一句；搭不上就完全不提，别硬凑、别评论时政八卦。`);
   }
   const user = recent.length
     ? '最近你们聊的（旧→新，只用来参考语气和话题，别复述）：\n' + recent.slice(-8).join('\n')

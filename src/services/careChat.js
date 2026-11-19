@@ -1,8 +1,24 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const care = require('./care');
 const time = require('../infra/time');
 const { describeError } = require('../infra/errors');
+const { hotSearch } = require('./weiboPosts');
+
+/** 微博 cookie：先看配置，再看 data/weibo.cookie 文件；都没有就返回空（搭话降级）。 */
+function weiboCookie(runtime) {
+  try {
+    if (runtime.config?.moments?.weiboCookie) return String(runtime.config.moments.weiboCookie);
+    const dataDir = runtime.config?.paths?.dataDir;
+    if (dataDir) {
+      const file = path.join(dataDir, 'weibo.cookie');
+      if (fs.existsSync(file)) return fs.readFileSync(file, 'utf8').trim();
+    }
+  } catch { /* ignore */ }
+  return '';
+}
 
 /**
  * 主动搭话的内容：问她一句「在干啥 / 累不累」。
@@ -40,7 +56,12 @@ async function careForChat(runtime, chatId) {
     return { ok: true, text: care.pickTemplate(), mock: true, hour };
   }
   try {
-    const { system, user } = care.buildCarePrompt({ persona: personaCfg, recent, name, hour });
+    let topics = [];
+    try {
+      const cookie = weiboCookie(runtime);
+      if (cookie) topics = await hotSearch({ cookie, limit: 12 });
+    } catch { topics = []; }
+    const { system, user } = care.buildCarePrompt({ persona: personaCfg, recent, name, hour, topics });
     const raw = await runtime.llm.complete({ system, turns: [{ role: 'user', content: user }] });
     const text = care.cleanCareText(raw) || care.pickTemplate();
     return { ok: true, text, mock: false, hour };
