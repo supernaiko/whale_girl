@@ -82,7 +82,8 @@ def choose(config, incoming, is_group, rng, log=None):
     return decision(selected, 'probability_hit' if selected else 'probability_miss')
 
 def spoken_text(bubbles, limit=90):
-    text = ' '.join(str(line).strip() for line in (bubbles or []) if str(line).strip())
+    # 气泡之间用换行连接：语音按「一句一停顿」朗读，别把几句话糊成一整段。
+    text = '\n'.join(str(line).strip() for line in (bubbles or []) if str(line).strip())
     text = re.sub(r'\[\[sticker:[^\]]{1,20}\]\]', '', text).strip()
     if len(text) <= limit:
         return text

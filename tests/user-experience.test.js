@@ -91,9 +91,10 @@ test('桥接表情包安全检查不扫描图库，且仍需要 token',async t=>
 
 test('桥接用户流程与语音凭据隔离的离线回归',t=>{
  const {spawnSync}=require('node:child_process');
- const bundled=path.join(__dirname,'../runtime/python/python.exe');
- const exe=fs.existsSync(bundled)?bundled:'python';
- const out=spawnSync(exe,['-B','-m','unittest','discover','-s',__dirname,'-p','test_user_flows.py'],{encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONUTF8:'1'},timeout:15000});
+ // 便携 Python 在 app/runtime 下（仓库根没有 runtime/），且优先尊重 WHALE_TEST_PYTHON。
+ const bundled=path.join(__dirname,'../app/runtime/python/python.exe');
+ const exe=process.env.WHALE_TEST_PYTHON||(fs.existsSync(bundled)?bundled:'python');
+ const out=spawnSync(exe,['-B','-m','unittest','discover','-s',__dirname,'-p','test_user_flows.py'],{encoding:'utf8',windowsHide:true,env:{...process.env,PYTHONUTF8:'1'},timeout:60000});
  if(out.error?.code==='ENOENT')return t.skip('未找到Python');
  if(out.error?.code==='EPERM')return t.skip(SKIP_REASON);
  assert.equal(out.status,0,(out.stderr||'')+(out.stdout||''));
