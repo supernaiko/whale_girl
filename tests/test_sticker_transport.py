@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(ROOT / 'bridge'))
 import sticker_transport as transport
+import send_state
+import targeting
 
 
 def shipped_uia(hwnd):
@@ -668,6 +670,22 @@ class BridgeContractTest(unittest.TestCase):
         self.send.assert_not_called()
 
     def send_environment(self):
+        win = SimpleNamespace(IsWindow=lambda hwnd: hwnd == 100,
+                              GetForegroundWindow=Mock(return_value=100),
+                              IsWindowVisible=lambda hwnd: True, IsIconic=lambda hwnd: False)
+        process = SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (1, 42 if hwnd == 100 else 99))
+        api = SimpleNamespace(GetAsyncKeyState=lambda key: 0, keybd_event=Mock())
+        self.enterContext(patch.dict(sys.modules, win32gui=win, win32process=process, win32api=api))
+        self.enterContext(patch.object(targeting, '_last_active_popup', return_value=100))
+        self.enterContext(patch.object(targeting, 'activate_target', return_value=False))
+        self.enterContext(patch.object(targeting, 'time', SimpleNamespace(sleep=Mock())))
+        desktop = FakeDesktop()
+        desktop.foreground = lambda hwnd: win.GetForegroundWindow() == hwnd
+
+        gui = SimpleNamespace(main_hwnd=100, use_window=Mock(return_value=True),
+                              _uia=SimpleNamespace(current_chat=lambda: 'Peer',
+                                                   open_chat=Mock(return_value=True)))
+        gui._get_uia = Mock(side_effect=lambda *, refresh: gui._uia)
         self.env.update(send_lock=threading.Lock(), gui_lock=threading.Lock(),
                         sticker_activity_allowed=Mock(return_value=True),
                         sticker_quarantine_allows=Mock(return_value=True), send_policy_allows=Mock(return_value=True), sticker_draft_quarantine={},
@@ -675,12 +693,9 @@ class BridgeContractTest(unittest.TestCase):
                         wechat_main_window_count=Mock(return_value=1),
                         account_send_allowed=Mock(return_value=True), ACCOUNT={'verified': True, 'hwnd': 100},
                         wechat_window_alive=Mock(return_value=True),
-                        WindowsDesktop=Mock(return_value=FakeDesktop()),
-                        gui=SimpleNamespace(main_hwnd=100, use_window=Mock(return_value=True),
-                                            _uia=SimpleNamespace(current_chat=lambda: 'Peer',
-                                                                 open_chat=Mock(return_value=True))),
+                        WindowsDesktop=Mock(return_value=desktop),
+                        gui=gui, UIA_CACHE={'u': None},
                         resolve_sticker_target=Mock(return_value=('peer', {'Peer'})),
-                        sticker_alias_match=transport.alias_match,
                         force_foreground=Mock(return_value=True),
                         snapshot_win_state=Mock(return_value={'hwnd': 100, 'iconic': False, 'fg': 0}),
                         restore_win_state=Mock(), log_throttled=Mock(),
@@ -688,6 +703,10 @@ class BridgeContractTest(unittest.TestCase):
                         _compat_mod=lambda: SimpleNamespace(pinned_window=lambda: 100),
                         ROOT=str(ROOT), os=os, db=FakeDB(), SEND_STATE={'active': False, 'start': 0},
                         time=SimpleNamespace(time=lambda: 1, sleep=lambda delay: None))
+        # AST 抽取只保留方法体，模块导入需要显式补回才能执行真实定位与异常处理。
+        self.env.update(locate_and_activate=targeting.locate_and_activate,
+                        TargetUnavailable=targeting.TargetUnavailable)
+        self.enterContext(patch.object(send_state, 'SEND_STATE', self.env['SEND_STATE']))
         bridge_functions({'send_sticker', 'open_attachment_chat', 'attachment_account_valid'}, self.env)
         return self.env
 
@@ -702,58 +721,36 @@ class BridgeContractTest(unittest.TestCase):
         # 现场回归：用户点发送时微信不在前台，以前直接 "open the target account window
         # in the foreground first" 失败。现在应当短暂抬到前台、发送、再还原窗口。
         env = self.send_environment()
-        desktop = FakeDesktop()
-        window = {'foreground': 200}
-        desktop.foreground = lambda hwnd: window['foreground'] == hwnd
-        env['WindowsDesktop'] = Mock(return_value=desktop)
+        foreground = sys.modules['win32gui'].GetForegroundWindow
+        foreground.return_value = 200
         env['force_foreground'].return_value = False
-        env['time'].sleep = Mock(side_effect=lambda _: window.update(foreground=100))
-        win = SimpleNamespace(IsWindow=lambda hwnd: hwnd == 100,
-                              GetForegroundWindow=lambda: window['foreground'],
-                              IsWindowVisible=lambda hwnd: True, IsIconic=lambda hwnd: False)
-        process = SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (1, 42))
-        with patch.dict(sys.modules, win32gui=win, win32process=process):
-            outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
-        self.assertEqual(outcome['status'], 'confirmed')
+        env['time'].sleep = Mock(side_effect=lambda _: setattr(foreground, 'return_value', 100))
+        outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
+        self.assertEqual(outcome['status'], 'confirmed', outcome)
         env['force_foreground'].assert_called_once_with(100)
         env['snapshot_win_state'].assert_called_once()
-        env['restore_win_state'].assert_called_once()
+        env['restore_win_state'].assert_called_once_with(env['snapshot_win_state'].return_value)
         env['guarded_sticker_send'].assert_called_once()
 
     def test_bridge_fails_when_window_cannot_be_brought_forward(self):
         env = self.send_environment()
-        desktop = FakeDesktop()
-        desktop.in_foreground = False
-        env['WindowsDesktop'] = Mock(return_value=desktop)
+        sys.modules['win32gui'].GetForegroundWindow.return_value = 200
         env['force_foreground'].return_value = False
-        win = SimpleNamespace(IsWindow=lambda hwnd: hwnd == 100, GetForegroundWindow=lambda: 200,
-                              IsWindowVisible=lambda hwnd: True, IsIconic=lambda hwnd: False)
-        process = SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (1, 42))
-        api = SimpleNamespace(GetAsyncKeyState=lambda key: 0, keybd_event=Mock())
-        with patch.dict(sys.modules, win32gui=win, win32process=process, win32api=api):
-            self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'failed')
+        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'failed')
         self.assertEqual(env['force_foreground'].call_count, 2)
         env['restore_win_state'].assert_not_called()
         env['guarded_sticker_send'].assert_not_called()
 
     def test_bridge_leaves_user_foreground_alone_on_switch(self):
         env = self.send_environment()
-        state = {'foreground': 200}
-        desktop = FakeDesktop()
-        desktop.foreground = lambda hwnd: state['foreground'] == hwnd
-        env['WindowsDesktop'] = Mock(return_value=desktop)
-        env['time'].sleep = Mock(side_effect=lambda _: state.update(foreground=300))
-        win = SimpleNamespace(IsWindow=lambda hwnd: hwnd == 100,
-                              GetForegroundWindow=lambda: state['foreground'],
-                              IsWindowVisible=lambda hwnd: True, IsIconic=lambda hwnd: False)
-        process = SimpleNamespace(GetWindowThreadProcessId=lambda hwnd: (1, 42))
-        api = SimpleNamespace(GetAsyncKeyState=lambda key: 0, keybd_event=Mock())
-        with patch.dict(sys.modules, win32gui=win, win32process=process, win32api=api):
-            self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'failed')
+        foreground = sys.modules['win32gui'].GetForegroundWindow
+        foreground.return_value = 200
+        env['time'].sleep = Mock(side_effect=lambda _: setattr(foreground, 'return_value', 300))
+        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'failed')
         env['force_foreground'].assert_called_once_with(100)
         env['restore_win_state'].assert_not_called()
         env['guarded_sticker_send'].assert_not_called()
-        api.keybd_event.assert_not_called()
+        sys.modules['win32api'].keybd_event.assert_not_called()
 
     def test_bridge_opens_exact_target_then_verifies_title(self):
         env = self.send_environment()
@@ -761,8 +758,9 @@ class BridgeContractTest(unittest.TestCase):
         env['gui']._uia = SimpleNamespace(
             current_chat=lambda: chats['current'],
             open_chat=Mock(side_effect=lambda keys: chats.update(current='Peer') or True))
-        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'confirmed')
-        env['gui']._uia.open_chat.assert_called_once()
+        outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
+        self.assertEqual(outcome['status'], 'confirmed', outcome)
+        env['gui']._uia.open_chat.assert_called_once_with(['Peer'])
 
     def test_bridge_initializes_missing_uia_cache_before_attachment(self):
         env = self.send_environment()
@@ -770,22 +768,28 @@ class BridgeContractTest(unittest.TestCase):
         env['gui']._uia = None
         env['gui']._get_uia = Mock(return_value=ready)
         outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
-        self.assertEqual(outcome['status'], 'confirmed')
-        env['gui']._get_uia.assert_called_once()
+        self.assertEqual(outcome['status'], 'confirmed', outcome)
+        env['gui']._get_uia.assert_called_once_with(refresh=False)
+        self.assertIs(env['UIA_CACHE']['u'], ready)
         env['guarded_sticker_send'].assert_called_once()
+        self.assertIs(env['guarded_sticker_send'].call_args.args[1], ready)
 
     def test_bridge_never_sends_when_open_chat_lands_on_wrong_title(self):
         env = self.send_environment()
         env['gui']._uia = SimpleNamespace(
             current_chat=lambda: 'Wrong chat', open_chat=Mock(return_value=True))
-        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'failed')
+        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot'),
+                         transport.result('failed', 'target_unavailable'))
+        env['gui']._uia.open_chat.assert_any_call(['Peer'])
         env['guarded_sticker_send'].assert_not_called()
 
     def test_bridge_bind_failure_never_transports(self):
         env = self.send_environment()
         env['gui'].use_window.return_value = False
-        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'failed')
+        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot'),
+                         transport.result('failed', 'target_unavailable'))
         env['gui'].use_window.assert_called_once_with(100)
+        env['gui']._get_uia.assert_not_called()
         env['guarded_sticker_send'].assert_not_called()
 
     def test_bridge_rechecks_switch_after_lock_wait(self):
@@ -804,9 +808,17 @@ class BridgeContractTest(unittest.TestCase):
 
     def test_bridge_watchdog_clears_on_transport_exception_without_retry(self):
         env = self.send_environment()
-        env['guarded_sticker_send'].side_effect = RuntimeError('fake partial transport error')
-        self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'unconfirmed')
+        active_during_send = []
+
+        def fail_transport(*args, **kwargs):
+            active_during_send.append(env['SEND_STATE']['active'])
+            raise RuntimeError('fake partial transport error')
+
+        env['guarded_sticker_send'].side_effect = fail_transport
+        outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
+        self.assertEqual(outcome['status'], 'unconfirmed', outcome)
         env['guarded_sticker_send'].assert_called_once()
+        self.assertEqual(active_during_send, [True])
         self.assertFalse(env['SEND_STATE']['active'])
 
     def quarantine_environment(self, observed=False, value='\ufffc'):
@@ -834,7 +846,8 @@ class BridgeContractTest(unittest.TestCase):
         env['guarded_sticker_send'].return_value = transport.result(
             'unconfirmed', 'draft uncertain', draft_may_remain=True, draft_observed=True)
         outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
-        self.assertEqual(outcome['status'], 'unconfirmed')
+        self.assertEqual(outcome['status'], 'unconfirmed', outcome)
+        env['guarded_sticker_send'].assert_called_once()
         self.assertEqual(env['sticker_draft_quarantine']['peer'], {
             'hwnd': 100, 'aliases': {'Peer'}, 'draft_observed': True})
 
