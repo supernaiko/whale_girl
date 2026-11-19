@@ -16,4 +16,17 @@ function clean(value, max) {
   return String(value == null ? '' : value).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, max);
 }
 
-module.exports = { clean };
+function clampText(value, max) {
+  const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+function str(value, max) {
+  return String(value == null ? '' : value).trim().slice(0, max);
+}
+
+function tidy(value) {
+  return String(value == null ? '' : value).replace(/[\r\n\t]/g, ' ').trim();
+}
+
+module.exports = { clean, clampText, str, tidy };

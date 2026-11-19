@@ -11,15 +11,12 @@
 const personCard = require('./personCard');
 const { LIMITS } = require('./constants');
 const { describeError } = require('../infra/errors');
+const { clamp01 } = require('../infra/configValues');
+const { clampText } = require('../infra/text');
 const { cleanIncoming } = require('./text');
 
 const QUESTION_RE = /[?？]|(?:吗|呢|吧)\s*$|如果|要是|假如|假设|开玩笑|哈哈|呵呵|不是吧/;
 const THIRD_PERSON_RE = /^(?:他|她|他们|她们|别人|人家|我朋友|我同事|我同学|我妈|我爸|我哥|我姐|我弟|我妹|我家那位)/;
-
-function clampText(value, max) {
-  const s = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-  return s.length > max ? s.slice(0, max) : s;
-}
 
 /**
  * 从一句话抽「自己说的事实」。
@@ -213,12 +210,6 @@ function parseEpisode(raw) {
   }).filter(Boolean);
   if (!summary && !facts.length && !events.length && !threads.length && !relations.length) return null;
   return { summary, facts, traits, events, threads, relations };
-}
-
-function clamp01(v, fallback) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.min(1, n));
 }
 
 /** 抽取式兜底摘要：保留谁说了什么，不退化成「用户说」 */

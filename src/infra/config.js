@@ -10,6 +10,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { readJson } = require('./jsonFile');
+const { isPlainObject } = require('./configValues');
 
 /**
  * 模型服务预设。needsKey 表示必须填 API Key；本地地址（localhost/内网）会自动免 Key。
@@ -345,10 +346,6 @@ const DEFAULT_CONFIG = {
   // 只有导出日志包时手动勾选才会带出去。
   log: { level: 'info', fileLevel: 'debug', trace: true, traceRaw: true },
 };
-
-function isPlainObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
 
 // 深拷贝：老实现只做 `{ ...base }` 浅拷贝，persona 这类嵌套对象会和
 // DEFAULT_CONFIG 共享同一个引用 —— 一次「导入预设」就把模块级默认值改了，

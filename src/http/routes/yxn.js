@@ -3,11 +3,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { json, readBody } = require('../util');
+const { clamp, clampNum } = require('../../infra/configValues');
 const localReply = require('../../services/localReply');
 
 const BASELINE = { valence: 55, energy: 50 };
 
-function clamp(n, lo, hi) { return Math.min(hi, Math.max(lo, n)); }
 function num(v, d) { return Number.isFinite(Number(v)) ? Number(v) : d; }
 
 function moodLabel(valence, energy) {
@@ -72,12 +72,6 @@ function writeJson(file, value) {
   const tmp = file + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8');
   fs.renameSync(tmp, file);
-}
-
-function clampNum(v, lo, hi, d) {
-  const n = Number(v);
-  if (!Number.isFinite(n)) return d;
-  return Math.min(hi, Math.max(lo, n));
 }
 
 function normalizeChatConfig(raw) {

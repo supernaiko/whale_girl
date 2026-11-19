@@ -331,6 +331,7 @@ module.exports = {
   resolveTimeZone,
   zoneName,
   parts,
+  pad2,
   dayKey,
   dayKeyOf,
   minutesOfDay,

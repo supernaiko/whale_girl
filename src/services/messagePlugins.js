@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
+const { isPlainObject: plainObject } = require('../infra/configValues');
 
 const HOOKS = ['chat.received', 'chat.pre_reply', 'chat.prompt', 'chat.generate', 'chat.reply', 'chat.before_send', 'chat.dispatched'];
 const ID = /^[a-z][a-z0-9-]{0,47}$/;
@@ -85,10 +86,6 @@ function readJson(file, limit = 800000) {
   const stat = fs.lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > limit) throw Error('invalid_file');
   return JSON.parse(fs.readFileSync(file, 'utf8'));
-}
-
-function plainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 class MessagePlugins {

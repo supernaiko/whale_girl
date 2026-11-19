@@ -10,6 +10,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { str, tidy } = require('../infra/text');
 const { portableFields } = require('./portable');
 
 const ID_RE = /^[a-z0-9][a-z0-9._-]{0,60}$/i;
@@ -255,14 +256,6 @@ function fromConfig(config) {
   return out;
 }
 
-function cleanName(value) {
-  return String(value == null ? '' : value).replace(/[\r\n\t]/g, ' ').trim().slice(0, MAX_NAME);
-}
-
-function cleanDescription(value) {
-  return String(value == null ? '' : value).replace(/[\r\n\t]/g, ' ').trim().slice(0, MAX_DESCRIPTION);
-}
-
 function newUserId() {
   const stamp = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 6);
@@ -289,7 +282,7 @@ function saveUser(config, { id = '', name = '', description = '' } = {}) {
     presetId = newUserId();
   }
 
-  const title = cleanName(name) || cleanName(previous?.name);
+  const title = tidy(name).slice(0, MAX_NAME) || tidy(previous?.name).slice(0, MAX_NAME);
   if (!title) return { ok: false, error: '给预设起个名字（1~40 个字）' };
 
   const now = Date.now();
@@ -297,7 +290,7 @@ function saveUser(config, { id = '', name = '', description = '' } = {}) {
     ...fromConfig(config),
     id: presetId,
     name: title,
-    description: cleanDescription(description) || cleanDescription(previous?.description),
+    description: tidy(description).slice(0, MAX_DESCRIPTION) || tidy(previous?.description).slice(0, MAX_DESCRIPTION),
     version: String(previous?.version || '1').slice(0, 40),
     source: 'user',
     order: USER_ORDER,
@@ -393,7 +386,7 @@ function renamePreset(config, id, name) {
   if (!key || !ID_RE.test(key) || !key.toLowerCase().startsWith(USER_PREFIX)) {
     return { ok: false, error: '只能重命名自己保存的预设' };
   }
-  const title = cleanName(name);
+  const title = tidy(name).slice(0, MAX_NAME);
   if (!title) return { ok: false, error: '名字要 1~40 个字' };
   const file = path.join(userDir(config), key + '.json');
   const data = readFile(file);
@@ -412,7 +405,6 @@ function toPatch(preset) {
   if (!preset) return null;
   preset = require('./legacy').upgradeLegacyPersona(preset);
   const patch = {};
-  const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
   // preset.name 是「这一版预设的标题」（如「鲸鲸 v1：像群友一样聊天」），
   // 绝不能写进 persona.name —— 那会把她的名字改成预设标题。
   // 预设真想改名时用单独的 personaName 字段。

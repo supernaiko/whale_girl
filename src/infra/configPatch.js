@@ -5,7 +5,7 @@ const path = require('node:path');
 const { loadConfig, DEFAULT_CONFIG } = require('./config');
 const configSchema = require('./configSchema');
 const features = require('./features');
-const { parseBoolean, parseNumber } = require('./configValues');
+const { parseBoolean, parseNumber, isPlainObject } = require('./configValues');
 const { getByPath } = require('./objpath');
 const time = require('./time');
 const { describeError } = require('./errors');
@@ -38,10 +38,6 @@ const SECRET_PATHS = new Set([
   'gateway.wechat.inboundToken',
   'admin.spell',
 ]);
-
-function isPlainObject(v) {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
 
 function pathParts(dotted) {
   const parts = String(dotted).split('.').filter(Boolean);

@@ -9,6 +9,7 @@ const { describeError } = require('../infra/errors');
 const { identityPatch } = require('../persona/profile');
 const { portableFields } = require('../persona/portable');
 const { legacyPatch } = require('../persona/legacy');
+const { str } = require('../infra/text');
 
 /* ---------------- 人设调教（/api/persona 用） ---------------- */
 
@@ -24,7 +25,6 @@ async function applyPersonaPatch(runtime, body) {
   for (const key of ['ownerName', 'aliases', 'masterRoast', 'proactive', 'opinions', 'emojiChance', 'maxBubbles', 'discussionMaxChars']) {
     if (Object.hasOwn(portable, key)) patch[key] = portable[key];
   }
-  const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
   if (body.emoji !== undefined) patch.emoji = ['关', '少', '正常', '多'].includes(body.emoji) ? body.emoji : '正常';
   if (body.historyTurns !== undefined) patch.historyTurns = Math.max(4, Math.min(400, Number(body.historyTurns) || 200));
   if (body.groupHistoryTurns !== undefined) patch.groupHistoryTurns = Math.max(2, Math.min(300, Number(body.groupHistoryTurns) || 150));

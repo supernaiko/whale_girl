@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
+const { isPlainObject: object } = require('../infra/configValues');
 const { HOOKS: WASM_HOOKS } = require('./messagePlugins');
 
 const HOOKS = [...WASM_HOOKS, 'chat.search', 'chat.search_result', 'app.start', 'app.stop', 'timer.tick', 'tool.run'];
@@ -13,7 +14,6 @@ const MAX_IO = 512 * 1024;
 const MAX_STATE = 65536;
 const UNSAFE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
 const MENTION_ALL = /[@＠][\s\u200B-\u200D\u2060\uFEFF]*(?:所有人|全体成员|all)(?![\p{L}\p{N}.])/iu;
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 function error(code) { return Object.assign(Error(code), { code }); }
 function timeout(value) { return Number.isInteger(value) && value >= 100 && value <= 120000 ? value : 30000; }
 function fileBytes(file, limit) {

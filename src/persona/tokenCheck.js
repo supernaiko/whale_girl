@@ -14,12 +14,7 @@
 const persona = require('./index');
 const { LIMITS } = require('../memory/constants');
 const { estimateBudgetTokens } = require('../memory/tokens');
-
-/** 当前生效的对话预算：config.memory.dialogueBudget 优先，否则用默认 5,500 */
-function effectiveDialogueBudget(config) {
-  const v = config && config.memory ? Number(config.memory.dialogueBudget) : NaN;
-  return Number.isFinite(v) && v > 0 ? v : LIMITS.dialogueBudget;
-}
+const { effectiveDialogueBudget } = require('../memory/budgetPlan');
 
 // 默认口径（测试和旧调用方还按它断言）；实际校验用 checkPersonaTokens 里的动态值
 const PERSONA_MAX_TOKENS = LIMITS.hardTotalTokens - LIMITS.dialogueBudget;

@@ -31,6 +31,8 @@ const personCard = require('./personCard');
 const { shortId } = require('./hash');
 const { estimateBudgetTokens } = require('./tokens');
 const { sanitizeForModel } = require('../core/text');
+const { clamp01 } = require('../infra/configValues');
+const { clampText: clip } = require('../infra/text');
 const { cleanIncoming } = require('./text');
 
 /** 每个 chat 最多留多少条关系边（超了淘汰 updatedAt 最旧的） */
@@ -84,23 +86,12 @@ const REPORTED_HEAD = new RegExp(`^我(?:的)?(?:${REL_ALT})(?:说|讲|告诉|�
 
 /* ------------------------------ 小工具 ------------------------------ */
 
-function clip(value, max) {
-  const s = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-  return s.length > max ? s.slice(0, max) : s;
-}
-
 function cleanId(value) {
   return clip(value, 100);
 }
 
 function cleanName(value) {
   return clip(value, 60).replace(/^@+/, '').replace(/\s+/g, '');
-}
-
-function clamp01(value, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(0, Math.min(1, n));
 }
 
 function nowOf(now) {

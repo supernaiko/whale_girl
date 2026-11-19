@@ -16,20 +16,19 @@ const relations = require('./relations');
 const { personHash } = require('./hash');
 const { describeError } = require('../infra/errors');
 const { tagId } = require('../infra/privacy');
+const { pad2 } = require('../infra/time');
 
 const TOPIC_SHIFT_RE = /(换个话题|换话题|不说这个|不聊这个|聊点别的|说点别的|跳过这个话题|别聊了|算了不聊)/;
 
 function dateString(ts) {
   const d = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 function episodeStart(chat, { now = Date.now(), seq = chat.meta.nextSeq } = {}) {
   chat.meta.episodeSeq = (Number(chat.meta.episodeSeq) || 0) + 1;
   const d = new Date(now);
-  const p = (n) => String(n).padStart(2, '0');
-  const id = `ep_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${String(chat.meta.episodeSeq).padStart(2, '0')}`;
+  const id = `ep_${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(chat.meta.episodeSeq)}`;
   chat.meta.episode = {
     id,
     startedAt: now,

@@ -10,6 +10,7 @@
  */
 
 const { describeError } = require('../infra/errors');
+const { pad2 } = require('../infra/time');
 
 const RANGE_LABELS = { today: '今天', yesterday: '昨天' };
 // 一份日报看不了几百条消息；只取最近的，并且告诉用户「有截断」。
@@ -35,8 +36,7 @@ const SYSTEM = [
   '- 全文 300～700 字。',
 ].join('\n');
 
-const pad = (n) => String(n).padStart(2, '0');
-const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dayKey = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 /** 本地时间的一天/两天边界；不按 UTC，用户看的是自己墙上钟的时间。 */
 function rangeWindow(range, now) {
@@ -191,7 +191,7 @@ class DigestService {
     for (let i = collected.rows.length - 1; i >= 0; i -= 1) {
       const row = collected.rows[i];
       const line = JSON.stringify({
-        t: `${pad(new Date(row.ts).getHours())}:${pad(new Date(row.ts).getMinutes())}`,
+        t: `${pad2(new Date(row.ts).getHours())}:${pad2(new Date(row.ts).getMinutes())}`,
         chat: row.chat,
         type: row.type,
         role: row.role,

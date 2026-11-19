@@ -24,6 +24,7 @@
  */
 
 const { LIMITS } = require('./constants');
+const { clamp } = require('../infra/configValues');
 
 /** 比例基准：默认对话预算（改这个数会同时改所有比例的分母） */
 const REF = LIMITS.dialogueBudget;
@@ -88,8 +89,10 @@ const MAX_COUNT_GROUP = 1200;
 const CARD_BASE = Object.freeze({ traits: 6, prefs: 10, threads: 4, events: 5 });
 const CARD_MAX = Object.freeze({ traits: 12, prefs: 30, threads: 10, events: 10 });
 
-function clamp(value, lo, hi) {
-  return Math.min(hi, Math.max(lo, value));
+/** 对话预算配置允许正的小数，分片时才由 planBudget 取整。 */
+function effectiveDialogueBudget(config) {
+  const value = config && config.memory ? Number(config.memory.dialogueBudget) : NaN;
+  return Number.isFinite(value) && value > 0 ? value : LIMITS.dialogueBudget;
 }
 
 /**
@@ -199,6 +202,7 @@ function planBudget(dialogueBudget, { relations = false } = {}) {
 }
 
 module.exports = {
+  effectiveDialogueBudget,
   planBudget,
   TIERS,
   nearestTier,

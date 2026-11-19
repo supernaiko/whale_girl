@@ -17,7 +17,7 @@
 
 const { LIMITS } = require('../memory/constants');
 const { estimateTokens } = require('../memory/tokens');
-const { planBudget, nearestTier, TIERS } = require('../memory/budgetPlan');
+const { planBudget, nearestTier, TIERS, effectiveDialogueBudget: dialogueBudget } = require('../memory/budgetPlan');
 const persona = require('../persona');
 const time = require('../infra/time');
 
@@ -67,12 +67,6 @@ function pricingFor(provider, model, now = new Date(), timeZone = 'Asia/Shanghai
   if (!PRICED_MODELS.includes(m)) return null;
   const band = isPeakHour(now, timeZone) ? 'peak' : 'idle';
   return { model: m, band, price: PRICING[band] };
-}
-
-/** 当前生效的对话预算：config.memory.dialogueBudget 优先，否则 5,500 */
-function dialogueBudget(config) {
-  const v = config && config.memory ? Number(config.memory.dialogueBudget) : NaN;
-  return Number.isFinite(v) && v > 0 ? v : LIMITS.dialogueBudget;
 }
 
 /** 按私聊 / 群聊各拼一份 system（静态块；每轮会变的「本轮状态」不计入，见下面 TAIL_REFRESH） */

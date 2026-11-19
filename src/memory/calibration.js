@@ -21,6 +21,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { clamp } = require('../infra/configValues');
 
 const LR = 0.05;
 const BETA1 = 0.9;
@@ -38,10 +39,6 @@ const MAX_RATIO = 2.5;
 const DEFAULT_DEBOUNCE_MS = 5000;
 
 const ENTRY_KEYS = Object.freeze(['scale', 'm', 'v', 't', 'n', 'updatedAt']);
-
-function clamp(value, lo, hi) {
-  return Math.min(hi, Math.max(lo, value));
-}
 
 function finite(value, fallback = 0) {
   const n = Number(value);

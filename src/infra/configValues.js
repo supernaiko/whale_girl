@@ -21,4 +21,24 @@ function parseNumber(value) {
   return Number.isFinite(number) ? number : undefined;
 }
 
-module.exports = { parseBoolean, parseNumber };
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function clamp(value, lo, hi) {
+  return Math.min(hi, Math.max(lo, value));
+}
+
+function clampNum(value, lo, hi, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return clamp(number, lo, hi);
+}
+
+function clamp01(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.max(0, Math.min(1, number));
+}
+
+module.exports = { parseBoolean, parseNumber, isPlainObject, clamp, clampNum, clamp01 };

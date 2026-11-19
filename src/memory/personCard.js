@@ -9,6 +9,9 @@
  */
 const { LIMITS, DAY_MS } = require('./constants');
 const { shortId } = require('./hash');
+const { clampNum } = require('../infra/configValues');
+const { clampText } = require('../infra/text');
+const { pad2 } = require('../infra/time');
 
 class MemoryIsolationError extends Error {
   constructor(message) {
@@ -19,20 +22,13 @@ class MemoryIsolationError extends Error {
 }
 
 function text(value, max = 200) {
-  const s = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-  return s.length > max ? s.slice(0, max) : s;
+  return clampText(value, max);
 }
 
 function norm(value) {
   return text(value, 400)
     .toLowerCase()
     .replace(/[\s，,。.!！？?；;：:、"'“”‘’（）()【】\[\]]/g, '');
-}
-
-function clampNum(value, min, max, fallback) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(max, Math.max(min, n));
 }
 
 function nowOf(now) {
@@ -210,8 +206,7 @@ function normalizeThread(raw, now) {
 
 function dateString(ts) {
   const d = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /* ------------------------------ 读取视图 ------------------------------ */

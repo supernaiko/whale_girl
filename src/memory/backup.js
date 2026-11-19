@@ -9,9 +9,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { readJson } = require('../infra/jsonFile');
+const { isPlainObject: object } = require('../infra/configValues');
+const { pad2 } = require('../infra/time');
 const { recoverRestore, restoreFiles } = require('./backupRestore');
-
-const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const BUNDLE_VERSION = 2;
 const KEEP = 20;
@@ -32,8 +32,7 @@ function stampMs(date = new Date()) {
 }
 
 function stamp(date = new Date()) {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}${p(date.getMonth() + 1)}${p(date.getDate())}-${p(date.getHours())}${p(date.getMinutes())}${p(date.getSeconds())}`;
+  return `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`;
 }
 
 function dataDir(root) {
