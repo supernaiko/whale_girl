@@ -32,6 +32,23 @@ test('心情标签分档', () => {
   assert.equal(moodLabel({ valence: 40, energy: 20 }), '又累又低落');
 });
 
+test('厌倦感：无聊高时优先说无聊', () => {
+  assert.equal(moodLabel({ valence: 80, energy: 70, boredom: 75 }), '有点无聊，想找点新鲜的');
+  assert.equal(moodLabel({ valence: 40, energy: 50, boredom: 20 }), '不太高兴');
+});
+
+test('被夸/互动让厌倦感回落', () => {
+  const m = applyEvents({ valence: 65, energy: 55, boredom: 80 }, ['praise']);
+  assert.ok(m.boredom < 80);
+  assert.ok(m.boredom >= 0);
+});
+
+test('没新鲜事厌倦感缓慢上升', () => {
+  const now = Date.now();
+  const m = decayMood({ valence: 65, energy: 55, boredom: 15, updatedAt: now - 24 * 3600 * 1000 }, { valence: 65, energy: 55, boredom: 15 }, now);
+  assert.ok(m.boredom > 15 && m.boredom <= 100);
+});
+
 test('亲近档位', () => {
   assert.equal(bondTier(90), '很亲近');
   assert.equal(bondTier(60), '朋友');

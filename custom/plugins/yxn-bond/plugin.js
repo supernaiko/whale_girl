@@ -14,8 +14,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const BASELINE = { valence: 65, energy: 55 };
+const BASELINE = { valence: 65, energy: 55, boredom: 15 };
 const MOOD_HALF_LIFE_HOURS = 6;
+const BOREDOM_HALF_LIFE_HOURS = 12;
 
 const POSITIVE_RE = /可爱|厉害|喜欢你|想你|辛苦了|谢谢|乖|好听|好看|靠谱|真棒|牛/;
 const NEGATIVE_RE = /笨|蠢|滚|烦|闭嘴|讨厌|敷衍|傻|废物|别烦我|没用的东西/;
@@ -33,7 +34,7 @@ function stateFile(input) {
 function emptyState(now = Date.now()) {
   return {
     baseline: { ...BASELINE },
-    mood: { valence: BASELINE.valence, energy: BASELINE.energy, updatedAt: now, why: '刚睡醒' },
+    mood: { valence: BASELINE.valence, energy: BASELINE.energy, boredom: BASELINE.boredom, updatedAt: now, why: '刚睡醒' },
     people: {},
   };
 }
@@ -67,9 +68,11 @@ function decayMood(mood, baseline, now) {
   const hours = Math.max(0, (now - num(mood.updatedAt, now)) / 3600000);
   if (!hours) return mood;
   const k = Math.pow(0.5, hours / MOOD_HALF_LIFE_HOURS);
+  const kb = Math.pow(0.5, hours / BOREDOM_HALF_LIFE_HOURS);
   return {
     valence: clamp(num(mood.valence, baseline.valence) * k + baseline.valence * (1 - k), 0, 100),
     energy: clamp(num(mood.energy, baseline.energy) * k + baseline.energy * (1 - k), 0, 100),
+    boredom: clamp(num(mood.boredom, num(baseline.boredom, BASELINE.boredom)) * kb + 100 * (1 - kb), 0, 100),
     updatedAt: now,
     why: mood.why || '',
   };
@@ -89,20 +92,23 @@ function eventsFromText(text) {
 function applyEvents(mood, events) {
   let valence = num(mood.valence, BASELINE.valence);
   let energy = num(mood.energy, BASELINE.energy);
+  let boredom = num(mood.boredom, BASELINE.boredom);
   let why = mood.why || '';
   for (const ev of events) {
-    if (ev === 'praise') { valence += 4; energy += 2; why = '被夸了'; }
-    else if (ev === 'insult') { valence -= 8; energy += 4; why = '被气到了'; }
-    else if (ev === 'care') { valence += 2; energy -= 1; why = '被关心'; }
-    else if (ev === 'flirt') { valence += 3; energy += 2; why = '有点害羞'; }
+    if (ev === 'praise') { valence += 4; energy += 2; boredom -= 15; why = '被夸了'; }
+    else if (ev === 'insult') { valence -= 8; energy += 4; boredom -= 5; why = '被气到了'; }
+    else if (ev === 'care') { valence += 2; energy -= 1; boredom -= 8; why = '被关心'; }
+    else if (ev === 'flirt') { valence += 3; energy += 2; boredom -= 12; why = '有点害羞'; }
   }
-  return { valence: clamp(valence, 0, 100), energy: clamp(energy, 0, 100), why, updatedAt: Date.now() };
+  return { valence: clamp(valence, 0, 100), energy: clamp(energy, 0, 100), boredom: clamp(boredom, 0, 100), why, updatedAt: Date.now() };
 }
 
 /** 心情 → 一句人话 */
 function moodLabel(mood) {
   const v = num(mood.valence, BASELINE.valence);
   const e = num(mood.energy, BASELINE.energy);
+  const b = num(mood.boredom, BASELINE.boredom);
+  if (b >= 70) return '有点无聊，想找点新鲜的';
   if (e < 25) return v < 45 ? '又累又低落' : '很困，懒得动';
   if (v >= 75) return e >= 60 ? '心情很好' : '挺惬意的';
   if (v >= 60) return '平静';
@@ -152,8 +158,10 @@ function updatePerson(state, message, events, now) {
 
 function moodLine(state) {
   const m = state.mood || BASELINE;
-  const why = m.why ? `，${m.why}` : '';
-  return `【此刻心情】${moodLabel(m)}${why}`;
+  const label = moodLabel(m);
+  let why = m.why ? `，${m.why}` : '';
+  if (num(m.boredom, BASELINE.boredom) >= 70 && !m.why) why = '，好久没新鲜事了';
+  return `【此刻心情】${label}${why}`;
 }
 
 function bondLine(state, senderId) {
