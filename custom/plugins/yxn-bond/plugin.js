@@ -47,6 +47,7 @@ function loadState(file) {
       baseline: { ...base.baseline, ...(raw.baseline || {}) },
       mood: { ...base.mood, ...(raw.mood || {}) },
       people: raw.people && typeof raw.people === 'object' ? raw.people : {},
+      historyAt: num(raw.historyAt, 0),
     };
   } catch {
     return emptyState();
