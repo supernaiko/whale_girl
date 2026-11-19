@@ -221,4 +221,4 @@ const hooks = {
 };
 
 module.exports = hooks;
-module.exports.__test = { scoreMessage, readSettings, DEFAULTS };
+module.exports.__test = { scoreMessage };

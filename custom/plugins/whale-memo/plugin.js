@@ -204,5 +204,5 @@ module.exports = {
     if (String(args.action || '') === '生成') return tick({ ...ctx, force: true });
     return { ok: true, lines, meta: readJson(p(ctx, 'meta.json'), {}), pending: fs.existsSync(p(ctx, 'pending.json')) };
   },
-  _internal: { mergeSection, parseModel, settingsOf, rememberChat, isOwner },
+  _internal: { parseModel },
 };

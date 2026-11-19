@@ -229,4 +229,4 @@ module.exports = {
   'timer.tick': async (ctx) => { try { return await onTick(ctx); } catch { return {}; } },
 };
 
-module.exports.__test = { decayMood, eventsFromText, applyEvents, moodLabel, bondTier, emptyState, updatePerson };
+module.exports.__test = { decayMood, eventsFromText, applyEvents, moodLabel, bondTier };
