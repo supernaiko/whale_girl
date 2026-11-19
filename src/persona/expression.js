@@ -24,7 +24,9 @@ function conversationPreferences(config) {
   ].join('\n');
 }
 
-const KAOMOJI = ['(๑•̀ㅂ•́)و✧', '(´･_･`)', '(╯°□°)╯', 'qwq', '(｡•́︿•̀｡)', '( ˘ω˘ )', '(๑>؂<๑)', 'ᕕ( ᐛ )ᕗ', '（＝ω＝）', '(；´д｀)'];
+// 只保留中性/正向的颜文字：负面情绪（生气/难过/无语）由 chat.js 的 EMOJI_TONES 按语气配 emoji 处理，
+// 随机兜底塞一个哭脸/生气颜文字会和对话割裂。
+const KAOMOJI = ['(๑•̀ㅂ•́)و✧', 'ᕕ( ᐛ )ᕗ', '( ˘ω˘ )', '(๑>؂<๑)', '（＝ω＝）'];
 const EMOJI_LEVEL_CHANCE = { 关: 0, 少: 0.12, 正常: 0.3, 多: 0.65 };
 
 function emojiChanceFor(config) {
