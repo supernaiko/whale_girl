@@ -8,10 +8,13 @@ const ROOT = path.resolve(__dirname, '../..');
 function selectTestPython({ env = process.env, root = ROOT, platform = process.platform,
   exists = fs.existsSync, spawn = spawnSync } = {}) {
   const explicit = env.WHALE_TEST_PYTHON || env.PYTHON;
-  const bundled = path.join(root, 'runtime/python/python.exe');
-  const hasBundled = platform === 'win32' && exists(bundled);
+  // 便携 Python 在 app/runtime 下（仓库根目录没有 runtime/），legacy 路径一并保留兼容。
+  const bundled = path.join(root, 'app/runtime/python/python.exe');
+  const legacyBundled = path.join(root, 'runtime/python/python.exe');
+  const found = [bundled, legacyBundled].filter((p) => platform === 'win32' && exists(p));
+  const hasBundled = found.length > 0;
   const candidates = explicit ? [explicit] : [
-    ...(hasBundled ? [bundled] : []),
+    ...found,
     ...(platform === 'win32' ? ['python', 'python3'] : ['python3', 'python']),
   ];
   for (const candidate of candidates) {

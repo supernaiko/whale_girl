@@ -21,7 +21,8 @@ function parseRange(url, now = Date.now()) {
     const days = Math.min(366, Math.round((to.getTime() - from.getTime()) / DAY) + 1);
     return { days, start: from.getTime(), end: end.getTime(), from: fromRaw, to: toRaw, now: end.getTime() };
   }
-  const days = /^\d+$/.test(daysRaw) ? Math.min(365, Math.max(1, Number(daysRaw))) : 7;
+  // 整数（含负号）都先夹到 1..365；非整数/乱写才是「非法」回默认 7。
+  const days = /^-?\d+$/.test(daysRaw) ? Math.min(365, Math.max(1, Number(daysRaw))) : 7;
   const midnight = new Date(now);
   midnight.setHours(0, 0, 0, 0);
   return {

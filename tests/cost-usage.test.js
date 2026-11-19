@@ -69,7 +69,7 @@ function beijingTime(clock) {
 test('a new ledger returns zero usage and creates default pricing', async t => {
   const f = await fixture(t);
   const zero = { requests: 0, prompt: 0, cached: 0, completion: 0, costCny: 0 };
-  assert.deepEqual(await f.get(), { ok: true, days: 7, today: zero, total: zero, peak: zero, offPeak: zero, byDay: [],
+  assert.deepEqual(await f.get(), { ok: true, days: 7, from: '', to: '', today: zero, total: zero, peak: zero, offPeak: zero, byDay: [],
     pricing: { ...defaults, rate: 1, deepseek: defaults.models.flash.peak } });
   assert.deepEqual(JSON.parse(fs.readFileSync(f.file('pricing.json'), 'utf8')), defaults);
   assert.equal(fs.existsSync(f.file('usage.jsonl')), false);
