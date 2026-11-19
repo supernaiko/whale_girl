@@ -311,6 +311,10 @@ test('疑问句不接（能不能…）', async () => {
   assert.strictEqual((await pre('你看看能不能在桌面创建一个文件', { overrides: NAT })).action, 'pass');
 });
 
+test('疑问句不接（你的记忆有问题吗）', async () => {
+  assert.strictEqual((await pre('你看看你的记忆有问题吗我刚刚动了你记忆方面的代码', { overrides: NAT })).action, 'pass');
+});
+
 test('根目录白名单：C:\\ 下任意路径都算在内', async () => {
   const out = (await gen('看看 C:\\Users', { overrides: { prefix: '', roots: ['C:\\'] } })).output.text;
   assert.doesNotMatch(out, /不在白名单/);

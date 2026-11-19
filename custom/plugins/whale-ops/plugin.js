@@ -228,8 +228,8 @@ function natural(raw) {
   if (parseFileSend(t) || /^发文件(?:\s|$)/.test(t)) return t;
   if (/^(?:电脑|助手|插件)?状态$/.test(t)) return '状态';
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
-  // 疑问句/讨价还价（「看看能不能…」「怎么…」）一律不接，交给鲸鲸
-  if (/(能不能|可不可以|可以吗|会不会|怎么办|为什么|怎么)/.test(t)) return null;
+  // 疑问句/讨价还价（「看看能不能…」「怎么…」「你的记忆有问题吗」）一律不接，交给鲸鲸
+  if (/(能不能|可不可以|可以吗|会不会|怎么办|为什么|怎么|有问题吗|有什么问题|怎么回事|还记得吗|对不对|行不行|好不好|吗[？?]?$)/.test(t)) return null;
 
   const driveOnly = t.match(/^(?:看看|查看|列一下|列出|看下|打开)?\s*([A-Za-z])\s*(?:盘|:\\?|:)\s*$/);
   if (driveOnly) return '看看 ' + driveOnly[1].toUpperCase() + ':\\';
@@ -258,8 +258,13 @@ function natural(raw) {
     return null;
   }
 
-  if (/^(读一下|读读|读|看一下|看看|查看)/.test(t) && (pathHit || TARGET_RE.test(rest) || FILE_RE.test(rest))) {
-    const arg = pathHit || rest.replace(/^(读一下|读读|读|看一下|看看|查看)\s*/, '').trim();
+  // 「读一下/读/读读」是明确读意图，可按名词兜底；「看看/看一下/查看」太口语，只在真给了路径或文件名时才当读
+  if (/^(读一下|读读|读)/.test(t) && (pathHit || TARGET_RE.test(rest) || FILE_RE.test(rest))) {
+    const arg = pathHit || rest.replace(/^(读一下|读读|读)\s*/, '').trim();
+    return arg ? '读 ' + arg : null;
+  }
+  if (/^(看一下|看看|查看)/.test(t) && (pathHit || FILE_RE.test(rest))) {
+    const arg = pathHit || rest.replace(/^(看一下|看看|查看)\s*/, '').trim();
     return arg ? '读 ' + arg : null;
   }
 
