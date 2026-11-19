@@ -15,7 +15,7 @@ const net = require('node:net');
 const { URL } = require('node:url');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
-const { decodeEntities } = require('./search/html');
+const { decodeEntities, stripTags } = require('./search/html');
 
 const URL_RE = /https?:\/\/[^\s<>"'（）()【】\[\]\u4e00-\u9fa5]+/g;
 const TRAILING = /[.,;:!?，。；：！？、）)】\]》>]*$/;
@@ -39,17 +39,6 @@ function extractUrls(text) {
   return out.slice(0, 2);
 }
 
-
-function stripTags(html) {
-  return decodeEntities(
-    String(html || '')
-      .replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style\b[^>]*>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-  )
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 function pickMeta(html, names) {
   for (const name of names) {
