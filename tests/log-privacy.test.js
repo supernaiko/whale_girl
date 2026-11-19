@@ -50,9 +50,8 @@ test('logger 落盘兜底：新调用点忘了脱敏也不会把 wxid/群号写�
   const logger = createLogger({ level: 'silent', fileLevel: 'debug', file });
   try {
     logger.info('debug sender=wxid_test_secret123456 chat=111111111@chatroom phone=' + ('138' + '12345678'));
-    await new Promise((resolve) => setTimeout(resolve, 60));
   } finally {
-    logger.close();
+    await logger.close();
   }
   const line = fs.readFileSync(file, 'utf8');
   fs.rmSync(dir, { recursive: true, force: true });

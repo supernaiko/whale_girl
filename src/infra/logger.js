@@ -165,7 +165,11 @@ function createLogger({ level = 'info', fileLevel = 'debug', file = null, tag = 
       level,
       fileLevel,
       close() {
-        if (stream) { stream.end(); stream = null; }
+        if (!stream) return Promise.resolve();
+        const settled = new Promise((resolve) => stream.once('finish', resolve));
+        stream.end();
+        stream = null;
+        return settled;
       },
     };
   }
