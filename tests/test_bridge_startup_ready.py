@@ -84,7 +84,9 @@ class BridgeStartupReadyTests(unittest.TestCase):
             data.mkdir()
             runtime = SimpleNamespace(bot_url='http://127.0.0.1:9191/webhook/wechat',
                                       ffmpeg_available=lambda: True, start_reminder_watch=lambda: object())
-            globals_ = {'G': SimpleNamespace(ROOT=root, os=os, log=Mock()), 'self': runtime}
+            # `_lock_sock` 是 start() 早段（:44 单实例锁）定义的局部变量，本测试只切片
+            # 后半段（reminders 之后），这里补上它，模拟“前半段已执行完”的状态。
+            globals_ = {'G': SimpleNamespace(ROOT=root, os=os, log=Mock()), 'self': runtime, '_lock_sock': None}
             exec(compile(finish_start, str(file), 'exec'), globals_)
             ready_state = json.loads((data / 'bridge-ready.json').read_text(encoding='utf-8'))
             self.assertEqual(ready_state['botUrl'], runtime.bot_url)
