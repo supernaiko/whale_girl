@@ -157,7 +157,9 @@ test('桥接源码里必须留着「钉账号」的关键代码（别被后来�
   assert.match(bridge, /def ensure_account_window/, '发送前要确认窗口还活着');
   assert.match(bridge, /def account_send_allowed/, '要有统一的发送闸');
   assert.match(bridge, /account_send_allowed\(['"]UIA['"]\)/, 'UIA 发送要走账号闸');
-  assert.match(bridge, /account_send_allowed\(['"]键盘通道['"]\)/, '键盘兜底也要走账号闸');
+  // 键盘兜底复用 _locate_text_chat（其 gate 里已有 account_send_allowed('UIA')），
+  // 且 send_text 入口还有统一的 account_send_allowed('发送') 兜住后台/UIA/键盘/OCR 四路。
+  assert.match(bridge, /account_send_allowed\(['"]发送['"]\)/, '发送入口要有统一账号闸，兜住键盘/OCR 等所有通道');
   assert.match(bridge, /os\._exit\(7\)/, '账号设置变了要 exit 7，交给启动器重新拉起');
   assert.match(bridge, /['"]account['"]: db\.account/, '心跳要上报当前账号');
 
