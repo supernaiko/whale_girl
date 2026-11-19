@@ -191,6 +191,26 @@ test('first startup imports flat and nested memories once and filters names, lin
   assert.equal(f.pool().length, 3);
 });
 
+test('seed import skips error/task/care/stale lines and keeps real replies', async t => {
+  const f = fixture(t);
+  f.memory([
+    { role: 'assistant', text: '活着呢，刚在发呆' },
+    { role: 'assistant', text: '这个文件不在白名单目录里，或者不存在' },
+    { role: 'assistant', text: '好，在桌面建个 xlsx' },
+    { role: 'assistant', text: '做完了，文件在桌面上' },
+    { role: 'assistant', text: '下午忙得怎么样，要不要歇会儿' },
+    { role: 'assistant', text: '是我主人啊，你问这么多遍' },
+    { role: 'assistant', text: '（读取日记）' },
+  ]);
+  await f.hooks['app.start'](f.ctx);
+  const brain = f.read('brain.json');
+  const all = Object.values(brain.buckets).flat().map(e => e.text);
+  assert.ok(all.includes('活着呢，刚在发呆'), 'real reply should be kept');
+  for (const junk of ['这个文件不在白名单目录里', '在桌面建个 xlsx', '做完了，文件在桌面上', '下午忙得怎么样', '是我主人啊', '（读取日记）']) {
+    assert.ok(!all.includes(junk), `should skip junk: ${junk}`);
+  }
+});
+
 test('seeds cap each bucket at 40 and maintenance decays hourly, keeps best 150 and preserves raw rows', async t => {
   const f = fixture(t, { freeMemory: () => 64 * 1024 * 1024 });
   f.memory(Array.from({ length: 50 }, (_, i) => ({ role: 'assistant', text: '你好呀第' + i + '回' })));

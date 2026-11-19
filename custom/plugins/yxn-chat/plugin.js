@@ -31,6 +31,8 @@ const LINK = /(?:[a-z][a-z\d+.-]*:\/\/|www[.．]|<a\s+href|\[[^\]]+\]\(|(?:[a-z\
 const COMMAND = /[建删改发]|打开|运行|截图|截屏|codex|dsh|电脑助手|鲸鲸助手|复制|启动|执行|导出|^(?:看看|列出|读|找|状态|帮助|确认|取消|移动)|桌面|文件|目录|表格|文档|记事本|资源管理器|xlsx|[a-z]:[\\/]/iu;
 const VOICE = /(?:^[\[【(（<]\s*(?:语音|voice|audio)|^语音[？?!！。]?$|语音消息|语音转文字|用语音|语音(?:回我|回复|说一句)|(?:来|说|讲|回复)(?:给我|一条|一句|一段|个|句|段|点)?\s*语音)/iu;
 const UNSAFE_TEXT = /[@＠][\s\u200B-\u200D\u2060\uFEFF]*(?:所有人|全体成员|all)(?![\p{L}\p{N}.])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/iu;
+// 种子导入要排除「不是回复」的自述：错误提示、任务确认、主动搭话、系统占位、过时自述
+const SEED_JUNK = /(?:白名单|不存在|路径|这个文件|目录里|建好了|做完了|文件在|弄完|在桌面|桌面建|表格|文档|记事本|读取日记|忙得怎么样|抽空喝口水|忙到现在|还在忙吗|是我主人|真不会忘|你问了几遍)/iu;
 
 const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
 const nonnegative = (value, fallback) => Math.max(0, finite(value, fallback));
@@ -229,7 +231,7 @@ async function seedReplies(appData, brain, now) {
       if (row?.role !== 'assistant' || typeof (row.text ?? row.content) !== 'string') continue;
       const text = (row.text ?? row.content).trim();
       const length = charCount(text);
-      if (length < 4 || length > 30 || seen.has(text) || LINK.test(text) || /[@＠]/u.test(text) || UNSAFE_TEXT.test(text)) continue;
+      if (length < 4 || length > 30 || seen.has(text) || LINK.test(text) || /[@＠]/u.test(text) || UNSAFE_TEXT.test(text) || SEED_JUNK.test(text)) continue;
       const lowercase = text.toLowerCase();
       if (knownNames.some(name => lowercase.includes(name))) continue;
       const bucket = classifyBucket(text);
