@@ -151,13 +151,14 @@ function updatePerson(state, message, events, now) {
 
 function moodLine(state) {
   const m = state.mood || BASELINE;
-  return `【此刻心情】${moodLabel(m)}（别报数字，说话带一点这个状态就行）`;
+  const why = m.why ? `，${m.why}` : '';
+  return `【此刻心情】${moodLabel(m)}${why}`;
 }
 
 function bondLine(state, senderId) {
   const p = state.people[String(senderId || '')];
   if (!p) return '';
-  return `【对她的印象】${p.name || '这个人'}是${bondTier(p.closeness)}，语气按这个分寸来，不用刻意讨好。`;
+  return `【对她的印象】${p.name || '这个人'}是${bondTier(p.closeness)}`;
 }
 
 async function onPreReply(ctx) {
