@@ -122,6 +122,9 @@ class Gateway {
     this.bot = bot;
     this.logger = logger;
     this.stats = { received: 0, replied: 0, sent: 0, failed: 0, lastMessageAt: 0, lastError: '' };
+    // 分段缓冲：同一会话收到图片/表情包（无文字）时挂起一个等待窗口，
+    // 窗口内来了文字就丢弃空消息只处理文字（见 handleInbound / _deliver）。
+    this._mediaPending = new Map();
     // 本地桥接的存活信息：桥接每 20 秒来一次心跳，状态接口据此报告「桥接在线 / 离线」
     this.bridge = {
       lastSeen: 0, uia: null, rest: false, listener: null, ffmpeg: null,
@@ -199,6 +202,42 @@ class Gateway {
         `[${this.platform}] 收到 ${msg.chatType === 'group' ? '群' : '私聊'}消息 sender=${tagName(msg.senderName)} ${textMeta(msg.text)}`
       );
     const localWechat = local && this.platform === 'wechat';
+
+    // 图片/表情包/语音这类没有文字的消息：先挂起一个窗口，看对方会不会接着发下半句。
+    // 用户一句话常分两段（先甩个表情包，停几十秒再打字），直接把空消息回「在呢」会让下半句孤立。
+    const settleMs = Number((this.bot && this.bot.config && this.bot.config.chat && this.bot.config.chat.mediaSettleMs) || 0);
+    const hasText = Boolean(String(msg.text || '').trim());
+    const key = this._mediaChatKey(msg);
+    if (settleMs > 0 && !hasText) {
+      const prev = this._mediaPending.get(key);
+      if (prev) clearTimeout(prev.timer);
+      const record = {
+        msg,
+        localWechat,
+        timer: setTimeout(() => {
+          this._mediaPending.delete(key);
+          this._deliver(msg, localWechat).catch(() => {});
+        }, settleMs),
+      };
+      this._mediaPending.set(key, record);
+      this.logger?.info(`[${this.platform}] 空文本消息进入分段等待 ${settleMs}ms sender=${tagName(msg.senderName)}`);
+      return { ok: true, action: 'ignore', reason: 'media_settle_wait' };
+    }
+    if (hasText && this._mediaPending.has(key)) {
+      // 来了文字：刚才那张图/表情包是分段的前半段，丢弃它，只处理文字。
+      const prev = this._mediaPending.get(key);
+      clearTimeout(prev.timer);
+      this._mediaPending.delete(key);
+      this.logger?.info(`[${this.platform}] 分段合并：丢弃先到的表情包，直接处理文字 sender=${tagName(msg.senderName)}`);
+    }
+    return this._deliver(msg, localWechat);
+  }
+
+  _mediaChatKey(msg) {
+    return `${this.platform}:${msg.chatId}:${msg.senderId || ''}`;
+  }
+
+  async _deliver(msg, localWechat) {
     const result = await this.bot.handle(msg, { localWechat });
     this.logger?.debug?.(`[${this.platform}] event=gateway.result action=${result.action || '-'} reason=${result.reason || '-'} bubbles=${(result.bubbles || []).length}`);
     if (result.action !== 'reply' || !result.reply) {
@@ -216,7 +255,7 @@ class Gateway {
       bubbles: result.bubbles || [result.reply],
       replyTo: msg.msgId,
       senderName: msg.senderName,
-      local,
+      local: localWechat,
     });
     if (this.bot.messagePlugins && result.reason !== 'command') {
       await this.bot.messagePlugins.run('chat.dispatched', this.bot.pluginContext({ key: this.bot.sessionKey(msg), msg }, {

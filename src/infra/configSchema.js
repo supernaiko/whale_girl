@@ -47,6 +47,7 @@ const FIELDS = {
   // 连续消息收集：私信和群聊共用安静窗口；群聊另有从首条开始的最大等待。
   'chat.messageSettleMs': { type: 'int', min: 0, max: 10000 },
   'chat.groupMaxBatchWaitMs': { type: 'int', min: 0, max: 60000 },
+  'chat.mediaSettleMs': { type: 'int', min: 0, max: 120000 },
 
   // ---- 采样参数 ----
   'deepseek.temperature': { type: 'float', min: 0, max: 2 },
