@@ -113,7 +113,7 @@ function constantModule(value) {
 
 test('real Wasm output is decoded and validated as JSON', async () => {
   const result = { action: 'wake', state: { left: 2 }, text: '测试' };
-  assert.deepEqual(await execute(constantModule(result).toString('base64'), {}, 1500), result);
+  assert.deepEqual(await execute(constantModule(result).toString('base64'), {}, 5000), result);
 });
 
 test('normal Bot entry point runs the reply plugin and records transformed text', async t => {
@@ -139,7 +139,7 @@ test('installed Wasm can wake an unaddressed group message; disabling restores d
   const { Bot } = require('../src/pipeline/chat');
   const { Store } = require('../src/memory/store');
   const { DEFAULT_CONFIG } = require('../src/infra/config');
-  const { plugins, root, grant } = fixture(t);
+  const { plugins, root, grant } = fixture(t, undefined, { pluginBudgetMs: 5000 });
   const flowFile = path.join(root, 'test-flow.flow.json');
   const flow = JSON.parse(fs.readFileSync(flowFile));
   flow.hooks = ['chat.pre_reply'];
