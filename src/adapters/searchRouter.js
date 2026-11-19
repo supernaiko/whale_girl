@@ -160,4 +160,4 @@ async function route(llm, text, opts = {}) {
   }
 }
 
-module.exports = { route, parseRoute, SYSTEM, systemFor };
+module.exports = { route, parseRoute, systemFor };

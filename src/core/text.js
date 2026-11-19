@@ -58,7 +58,6 @@ function stripInternalTimestamps(text) {
 }
 
 module.exports = {
-  SENSITIVE_PATTERNS,
   sanitizeForModel,
   nameMatches,
   formatStamp,

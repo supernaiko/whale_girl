@@ -349,5 +349,4 @@ module.exports = {
   buildCarePrompt,
   cleanCareText,
   formatMinutes,
-  DEFAULT_WINDOW,
 };

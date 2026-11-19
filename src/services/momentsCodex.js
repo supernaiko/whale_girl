@@ -230,4 +230,4 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
   });
 }
 
-module.exports = { generateImage, available, choose, parseResult, buildPrompt, codexEntry };
+module.exports = { generateImage, available, choose, parseResult, buildPrompt };

@@ -290,4 +290,4 @@ async function fetchPhoto(query, destDir, options = {}) {
   return realFallback;
 }
 
-module.exports = { fetchPhoto, photoSize, exifCamera, baiduSearch, bingSearch, bingCandidates, download };
+module.exports = { fetchPhoto };

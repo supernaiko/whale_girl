@@ -199,9 +199,7 @@ function refreshWechatAccounts(runtime, timeoutMs = 30000) {
 }
 
 module.exports = {
-  newestDbMtime,
   scanWechatAccounts,
-  readAccountsCache,
   matchAccountDir,
   wechatAccountsPayload,
   refreshWechatAccounts,

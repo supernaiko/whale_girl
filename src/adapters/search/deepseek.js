@@ -49,4 +49,4 @@ async function search(query, opts = {}) {
   return rows.map((row) => mapItem(row, fetchedAt)).filter(Boolean);
 }
 
-module.exports = { search, mapItem, BASE_URL };
+module.exports = { search };

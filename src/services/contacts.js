@@ -132,4 +132,4 @@ class ContactsCache {
   }
 }
 
-module.exports = { ContactsCache, normalizeItem, MAX_ITEMS };
+module.exports = { ContactsCache, normalizeItem };

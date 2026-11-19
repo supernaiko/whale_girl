@@ -302,4 +302,4 @@ function buildMemoryBlock({
   return body ? `${body}\n\n${MEMORY_SCOPE_NOTICE}` : MEMORY_SCOPE_NOTICE;
 }
 
-module.exports = { buildMemoryBlock, MEMORY_SCOPE_NOTICE, splitSentences, indexLine };
+module.exports = { buildMemoryBlock, MEMORY_SCOPE_NOTICE };

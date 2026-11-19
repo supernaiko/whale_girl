@@ -142,4 +142,4 @@ function bridgeLine(msg) {
   return '【桥接】' + parts.join(' · ');
 }
 
-module.exports = { systemBlock, bridgeLine, resolvePlace, resolveLocation, clampLocation };
+module.exports = { systemBlock, bridgeLine, resolveLocation, clampLocation };

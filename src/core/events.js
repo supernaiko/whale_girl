@@ -110,4 +110,4 @@ function formatBlock(events, { max = 12, now = Date.now(), timeZone = '' } = {})
   ].join('\n');
 }
 
-module.exports = { clampEvent, describe, formatBlock, timeLabel, relativeLabel, TYPE_LABEL, STATUS_LABEL };
+module.exports = { clampEvent, describe, formatBlock };

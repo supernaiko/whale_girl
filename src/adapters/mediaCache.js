@@ -81,4 +81,4 @@ function cleanup(dir, { maxAgeDays = 7, maxTotalMB = 500, now = Date.now() } = {
   return { removed, freedMB: Math.round((freed / 1024 / 1024) * 10) / 10, kept: keep.length };
 }
 
-module.exports = { cleanup, listFiles };
+module.exports = { cleanup };

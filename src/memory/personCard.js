@@ -482,7 +482,6 @@ function forget(card, needle, now = Date.now()) {
 
 module.exports = {
   MemoryIsolationError,
-  assertChat,
   newCard,
   normalizeCard,
   activeTraits,
@@ -496,7 +495,6 @@ module.exports = {
   addThread,
   closeThread,
   forget,
-  similarity,
   normalizeText: norm,
   dateString,
 };

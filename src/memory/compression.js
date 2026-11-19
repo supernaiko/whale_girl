@@ -293,18 +293,12 @@ function resetSummary(chat, { episodeId = '', coveredThroughSeq = 0, now = Date.
 }
 
 module.exports = {
-  SUMMARY_SYSTEM,
-  recentSince,
   recentTokens,
   recentForPrompt,
-  takeChunk,
-  parseSummary,
   llmSummary,
   applySegment,
-  trimSummary,
   compressSync,
   compressAsync,
   prepareSoft,
-  resetSummary,
   recomputeSummary,
 };

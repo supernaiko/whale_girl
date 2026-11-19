@@ -32,4 +32,4 @@ function followSearch(rt, websearch = {}) {
     followHint: `搜索自动跟随 ${provider === 'qwen' ? '千问' : 'DeepSeek'}，复用聊天 Key；失败回退本地搜索。` };
 }
 
-module.exports = { officialChat, followVoice, followSearch };
+module.exports = { followVoice, followSearch };

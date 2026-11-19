@@ -183,4 +183,4 @@ function formatBlock(snap, { location = '', locationNote = '', version = '' } = 
   return lines.join('\n');
 }
 
-module.exports = { snapshot, formatBlock, tzOffsetLabel, localizeEdition, WINDOWS_RELEASE };
+module.exports = { snapshot, formatBlock };

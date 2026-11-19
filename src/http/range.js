@@ -35,4 +35,4 @@ function parseRange(url, now = Date.now()) {
   };
 }
 
-module.exports = { parseRange, DAY };
+module.exports = { parseRange };

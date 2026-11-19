@@ -228,10 +228,6 @@ module.exports = {
   parseWhen,
   parseReminder,
   looksLikeReminder,
-  extractWhat,
   describeWhen,
   confirmText,
-  cnToNumber,
-  parseClockPhrase,
-  applyPeriod,
 };

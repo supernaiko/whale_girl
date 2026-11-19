@@ -341,4 +341,4 @@ async function describe(config, { imageBase64, mime = 'image/jpeg', prompt = '' 
   return String(text || '').trim();
 }
 
-module.exports = { describe, resolveKey, status, TEST_IMAGE, maskKey, sniffMime, requestHeaders };
+module.exports = { describe, resolveKey, status, TEST_IMAGE, sniffMime, requestHeaders };

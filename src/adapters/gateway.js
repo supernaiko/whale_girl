@@ -386,4 +386,4 @@ function createGateways({ config, bot, logger }) {
   return gateways;
 }
 
-module.exports = { Gateway, createGateways, normalizeInbound, postJson, PLATFORMS };
+module.exports = { Gateway, createGateways, normalizeInbound };

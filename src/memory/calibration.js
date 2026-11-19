@@ -305,14 +305,11 @@ function reset() {
 }
 
 module.exports = {
-  TokenCalibration,
   createCalibration,
   apply,
   observe,
   trimScale,
   reset,
-  modelKey,
-  defaultFile,
   constants: Object.freeze({
     LR,
     BETA1,

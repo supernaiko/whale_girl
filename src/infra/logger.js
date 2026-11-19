@@ -177,4 +177,4 @@ function createLogger({ level = 'info', fileLevel = 'debug', file = null, tag = 
   return make(tag);
 }
 
-module.exports = { createLogger, LEVELS, callerSite };
+module.exports = { createLogger };

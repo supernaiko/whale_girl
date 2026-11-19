@@ -121,7 +121,6 @@ function compareUsage(budget, usage, { scale = 1 } = {}) {
 }
 
 module.exports = {
-  BudgetExceededError,
   buildBudget,
   assertWithinHardLimit,
   compareUsage,

@@ -135,4 +135,4 @@ async function download(url, destDir) {
   return file;
 }
 
-module.exports = { searchPosts, download, parseCards };
+module.exports = { searchPosts, download };

@@ -275,16 +275,10 @@ function closeIdleEpisodes({ chat, chatStore, llm = null, logger = null, now = D
 }
 
 module.exports = {
-  TOPIC_SHIFT_RE,
-  episodeStart,
   ensureEpisode,
   touchEpisode,
   shouldClose,
-  episodeMessages,
-  speakersOf,
   closeEpisode,
   rotateIfNeeded,
   closeIdleEpisodes,
-  dateString,
-  DAY_MS,
 };

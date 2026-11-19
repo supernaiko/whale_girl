@@ -62,4 +62,4 @@ function consume(dataDir, provider) {
   return value.counts[provider];
 }
 
-module.exports = { today, read, used, available, consume };
+module.exports = { today, available, consume };

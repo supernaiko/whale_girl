@@ -202,14 +202,8 @@ module.exports = {
   planBudget,
   TIERS,
   nearestTier,
-  cardCaps,
   SHARES,
   CEILINGS,
-  BOTTOMS,
-  CARD_BASE,
-  CARD_MAX,
-  RECENT_FLOOR,
-  MIN_DIALOGUE,
 };
 
 

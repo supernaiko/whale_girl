@@ -170,4 +170,4 @@ async function generate({ text, instruction, config, timeoutMs = 60000 }) {
   }
 }
 
-module.exports = { generate, freeMB, SYSTEM, parseReply };
+module.exports = { generate, parseReply };

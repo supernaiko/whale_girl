@@ -76,6 +76,5 @@ module.exports = {
   messageTokens,
   messageBudgetTokens,
   estimatePrompt,
-  CJK_RE,
 };
 

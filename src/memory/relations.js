@@ -387,10 +387,7 @@ function capBlockTokens(block, cap = MAX_BLOCK_TOKENS) {
 }
 
 module.exports = {
-  MAX_RELATIONS,
-  MAX_TEXT,
   MAX_BLOCK_TOKENS,
-  RELATION_WORDS,
   normalizeRelations,
   upsert,
   find,
@@ -398,6 +395,4 @@ module.exports = {
   resolveName,
   renderMentionBlock,
   capBlockTokens,
-  pairOf,
-  relationId,
 };

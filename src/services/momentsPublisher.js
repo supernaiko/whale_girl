@@ -723,4 +723,4 @@ class MomentsPublisher {
   }
 }
 
-module.exports = { MomentsPublisher, parseDraft };
+module.exports = { MomentsPublisher };

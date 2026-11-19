@@ -519,15 +519,8 @@ function saveConfigPatch(config, patch) {
 }
 
 module.exports = {
-  SETTINGS_SHADOW,
-  SECRET_PATHS,
-  isPlainObject,
   getByPath,
-  setByPath,
-  coerceValue,
-  flattenPatch,
   publicConfig,
-  clearSettingsShadow,
   mergeConfigInPlace,
   applyConfigPatch,
   clearSecrets,

@@ -275,7 +275,6 @@ function restoreFromFile(root, file) {
 }
 
 module.exports = {
-  BUNDLE_VERSION,
   collect,
   summarize,
   writeSnapshot,
@@ -283,7 +282,5 @@ module.exports = {
   listBackups,
   restoreFrom,
   restoreFromFile,
-  backupDir,
-  FILES,
   KEEP,
 };

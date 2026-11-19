@@ -734,7 +734,6 @@ module.exports = {
   migrateSampling,
   isLocalUrl,
   normalizeBaseUrl,
-  LOCAL_HOST_RE,
   loadConfig,
   ensureConfigFile,
   loadSettings,
@@ -744,7 +743,5 @@ module.exports = {
   resolveVoiceConfig,
   resolveSearchConfig,
   maskKey,
-  deepMerge,
-  readJson,
   projectRoot,
 };

@@ -327,11 +327,8 @@ function nextDayStart(ms, tz = '') {
 }
 
 module.exports = {
-  DAY_MS,
-  SYSTEM_TZ,
   isValidTimeZone,
   resolveTimeZone,
-  systemTimeZone,
   zoneName,
   parts,
   dayKey,
@@ -344,11 +341,9 @@ module.exports = {
   parseClock,
   normalizeClock,
   parseWindow,
-  formatWindow,
   parseWindows,
   invalidWindows,
   normalizeWindows,
-  windowsText,
   inWindows,
   toEpoch,
   addDays,

@@ -158,4 +158,4 @@ function createTrace({ dataDir, enabled = true, raw = false, now = () => Date.no
   return { record, enabled, raw, dir, rawDir, chatTag, stateSummary, hash8 };
 }
 
-module.exports = { createTrace, hash8, chatTag, stateSummary };
+module.exports = { createTrace };

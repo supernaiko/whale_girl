@@ -126,4 +126,4 @@ function computeTrigger(bot, { msg, atMe, clean, isGroup, state, nowMs, isMaster
   return { wake: false, reason: clean.text ? 'not_addressed' : 'no_text' };
 }
 
-module.exports = { INSULT_RE, INSULT_LOOSE_RE, namedHerIn, herNames, computeTrigger };
+module.exports = { INSULT_RE, INSULT_LOOSE_RE, namedHerIn, computeTrigger };

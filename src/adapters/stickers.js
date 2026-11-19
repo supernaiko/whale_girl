@@ -1010,8 +1010,8 @@ function upload(config, root, emotion, files) {
   invalidateScan(target);
   return uploaded;
 }
-module.exports = { EMOTIONS, EXTRA_PREFIX, cleanCategoryLabel, extraKey, hasCategory, readExtraCategories, writeExtraCategories, categoryFile, discoverCategories, syncDiscoveredCategories, readIgnored, writeIgnored, normalizeEmotion, categoryFromName, resolveCategory, SYNONYMS, promptCategories, GENERIC, EXTS, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES,
-  hasEmotion, resolveImage, safeDirectory, migrateLegacy, migrateLegacyAsync, ensureBuiltinDirs, stickerDir, regularFile, listImages, listImagesAsync, categoryImages, categoryImagesAsync, categoryItems, categoryItemsAsync, categoryDir, targetForOpen, imagesFor, isOn,
+module.exports = { EMOTIONS, cleanCategoryLabel, extraKey, readExtraCategories, writeExtraCategories, syncDiscoveredCategories, readIgnored, writeIgnored, normalizeEmotion, categoryFromName, resolveCategory, promptCategories, MAX_FILE_BYTES, MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES,
+  hasEmotion, resolveImage, safeDirectory, migrateLegacy, migrateLegacyAsync, ensureBuiltinDirs, stickerDir, regularFile, listImages, listImagesAsync, categoryImages, categoryItems, categoryItemsAsync, targetForOpen, imagesFor, isOn,
   invalidateScan, clearScanCache, choose, pick, isStickerRequest, imageType, upload,
   isSeriousText, isLivelyText, SERIOUS_WINDOW_MS, SERIOUS_TURNS,
   isUsableCategory, defaultCategory, resolveUsableCategory, categoryInText, setProbeLogger, moodCategory };

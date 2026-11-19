@@ -98,4 +98,4 @@ async function quota(secret, opts = {}) {
   } : null;
 }
 
-module.exports = { search, quota, mapItem, timeOf, BASE_URL };
+module.exports = { search };

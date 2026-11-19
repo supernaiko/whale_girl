@@ -2355,4 +2355,4 @@ class Bot {
   }
 }
 
-module.exports = { Bot, isContextLengthError, momentsIntent };
+module.exports = { Bot, momentsIntent };

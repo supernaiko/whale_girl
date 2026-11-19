@@ -447,8 +447,6 @@ module.exports = {
   list,
   load,
   toPatch,
-  dirFor,
-  userDir,
   fromConfig,
   saveUser,
   updateFromConfig,
@@ -456,5 +454,4 @@ module.exports = {
   removePreset,
   renamePreset,
   sourceOf,
-  USER_PREFIX,
 };

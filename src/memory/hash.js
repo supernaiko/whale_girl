@@ -23,4 +23,4 @@ function shortId(value, len = 10) {
   return sha1Hex(value).slice(0, len);
 }
 
-module.exports = { sha1Hex, chatHash, personHash, shortId };
+module.exports = { chatHash, personHash, shortId };

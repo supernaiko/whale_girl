@@ -30,4 +30,4 @@ function portableFields(data = {}, { local = false } = {}) {
   return out;
 }
 
-module.exports = { portableFields, NUMBERS, STRINGS, BOOLEANS };
+module.exports = { portableFields };

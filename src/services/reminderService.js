@@ -448,4 +448,4 @@ class ReminderService {
   }
 }
 
-module.exports = { ReminderService, normalizeRules, RETRY_DELAY_MS, CLAIM_TIMEOUT_MS, MAX_TOTAL, MAX_ACTIVE_PER_CHAT };
+module.exports = { ReminderService, normalizeRules, RETRY_DELAY_MS, CLAIM_TIMEOUT_MS };

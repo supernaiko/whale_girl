@@ -26,4 +26,4 @@ function parseHistoryLine(line) {
   }
 }
 
-module.exports = { stripHistoryPrefixes, parseHistoryLine };
+module.exports = { parseHistoryLine };

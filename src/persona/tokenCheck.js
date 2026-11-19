@@ -103,4 +103,4 @@ async function checkPersonaTokens(runtime, patch = {}) {
   };
 }
 
-module.exports = { PERSONA_MAX_TOKENS, checkPersonaTokens, previewConfig, longestSystem, effectiveDialogueBudget };
+module.exports = { PERSONA_MAX_TOKENS, checkPersonaTokens, previewConfig, longestSystem };

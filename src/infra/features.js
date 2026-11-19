@@ -171,4 +171,4 @@ function defaults() {
   return out.features;
 }
 
-module.exports = { REGISTRY, isOn, list, defaults, getByPath, toBool };
+module.exports = { REGISTRY, isOn, list, getByPath, toBool };

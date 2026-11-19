@@ -147,4 +147,4 @@ function topicOverlap(text, recentTexts) {
   return overlap(text, recent);
 }
 
-module.exports = { tokens, overlap, bm25, selectEvents, topicOverlap, recencyScore };
+module.exports = { tokens, selectEvents, topicOverlap, recencyScore };

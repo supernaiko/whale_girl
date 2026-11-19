@@ -147,4 +147,4 @@ function replyChannelLabel(config) {
   return '本地桥接（启动器里点「启动」，桥接起来后回复才发得出去）';
 }
 
-module.exports = { storeSummary, statusPayload, recentSenders, recentMessages, replyChannelLabel, budgetSnapshot, usageSnapshot };
+module.exports = { statusPayload, recentSenders, recentMessages, replyChannelLabel, budgetSnapshot };

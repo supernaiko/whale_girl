@@ -356,17 +356,13 @@ function _clearForTest() {
 
 module.exports = {
   detect,
-  refresh,
   startAutoProbe,
-  stop,
   cached,
   ensureProbe,
   systemPosition,
   reverseGeocode,
   composeLocation,
   noteFor,
-  formatAccuracy,
-  FINE_ACCURACY_M,
   _setCacheForTest,
   _clearForTest,
 };

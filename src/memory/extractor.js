@@ -309,7 +309,6 @@ async function extractEpisode({ messages, llm, speakers = [], logger = null, now
 }
 
 module.exports = {
-  EPISODE_SYSTEM,
   cleanIncoming,
   extractSelfFacts,
   applyFacts,

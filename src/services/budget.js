@@ -214,7 +214,7 @@ function estimate(config, {
   };
 }
 
-module.exports = { estimate, dialogueBudget, systemVariants, costOf, PRICING, pricingFor, isPeakHour };
+module.exports = { estimate, dialogueBudget, costOf, PRICING, pricingFor };
 
 
 

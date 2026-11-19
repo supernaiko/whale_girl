@@ -1070,9 +1070,5 @@ module.exports = {
   friendlyForStatus,
   looksDegenerate,
   cutToSentence,
-  thinkingPlan,
-  pickText,
-  stripThinking,
-  reasoningTokensOf,
 };
 

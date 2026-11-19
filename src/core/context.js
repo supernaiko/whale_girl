@@ -165,4 +165,4 @@ function buildTurns(msg, history, memoryBlock = '', tailBlock = '', timeZone = '
   return turns;
 }
 
-module.exports = { MAX_TURN_CHARS, MAX_PROMPT_CHARS, MAX_PROMPT_TOKENS, STAMP_GAP_MS, buildTurns, makeStamper };
+module.exports = { MAX_PROMPT_CHARS, buildTurns };

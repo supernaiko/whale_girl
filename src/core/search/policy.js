@@ -45,4 +45,4 @@ function cityCandidate(text) {
     .replace(/(?:的|会不会|会|要不要|吗|呢|呀|啊|\s)+$/, '').trim();
 }
 
-module.exports = { gate, inferKind, intent, cityCandidate, weatherSupported, DOMAINS };
+module.exports = { gate, intent, cityCandidate, DOMAINS };

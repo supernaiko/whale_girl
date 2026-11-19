@@ -99,4 +99,4 @@ async function apiSearch({ query, text = '', websearch = {}, dataDir = 'data', d
   return result(items, { status, reason, attempts, elapsedMs: Date.now() - started });
 }
 
-module.exports = { apiSearch, cleanProviders };
+module.exports = { apiSearch };

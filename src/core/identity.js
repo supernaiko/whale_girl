@@ -33,4 +33,4 @@ function stripMasterDispute(history) {
   return out;
 }
 
-module.exports = { MASTER_DENIAL_RE, MASTER_ASK_RE, stripMasterDispute };
+module.exports = { stripMasterDispute };

@@ -357,4 +357,4 @@ function formatForPrompt(info) {
 }
 
 module.exports = {
-  isPrivateHost, extractUrls, fetchUrl, describeLink, parsePage, formatForPrompt, kindOf, stripTags, decodeEntities, cleanVideoDesc };
+  isPrivateHost, extractUrls, fetchUrl, describeLink, parsePage, formatForPrompt, kindOf, stripTags, decodeEntities };
