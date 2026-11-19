@@ -174,6 +174,13 @@ class SenderMixin:
         """优先用 UIA 发送：不依赖 OCR 找发送按钮，成功后返回 True。"""
         from targeting import TargetUnavailable
 
+        # 微信半夜自更新/回收窗口后，UIA 手里还攥着旧窗口的 COM 指针/句柄，再碰一次
+        # 直接 0xC0000005（访问违规，try/except 拦不住）。发送前先问窗口还在不在；
+        # 不在就 return False，交给 send_text 走键盘/OCR 兜底，别把桥接进程搞死。
+        if not self.wechat_window_alive():
+            G.log('[delivery] stage=uia_send result=skipped reason=window_dead')
+            return False
+
         try:
             with self.gui_lock:
                 _, u, keys = self._locate_text_chat(who, username)
