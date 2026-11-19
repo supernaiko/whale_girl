@@ -115,7 +115,6 @@ function choose(input = {}) {
       const parsed = parseResult(out, images.length);
       if (typeof input.onRaw === 'function') { try { input.onRaw(out); } catch { /* ignore */ } }
       if (!parsed) return finish(null, 'exit ' + code + ' ' + err.slice(-200));
-      if (typeof input.onRaw === 'function') { try { input.onRaw(out); } catch { /* ignore */ } }
       finish(parsed, '');
     });
   });
