@@ -1648,19 +1648,6 @@ class Bot {
     this.recordUsage(decision, this.usageSince(usageMark));
   }
 
-  /** 偶尔在句尾补一个 emoji 或颜文字（由「颜文字用量」档位决定概率） */
-  pickEmoji(text) {
-    // 吵架大赛模式不发表情：正在喷人突然来个 🍚 很出戏
-    const chance = (persona.fightModeOn && persona.fightModeOn(this.config)) ? 0 : persona.emojiChanceFor(this.config);
-    if (!chance) return text;
-    if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text)) return text;
-    if (this.rng() > chance) return text;
-    // 一半颜文字、一半 emoji：以前只有 emoji，所以调「颜文字」也看不到颜文字
-    if (this.rng() < 0.5) return text + ' ' + persona.kaomojiPick(this.rng);
-    const list = ['🐋', '🥺', '😭', '✨', '💧', '🫧'];
-    return text + ' ' + list[Math.floor(this.rng() * list.length)];
-  }
-
   /** 写入鲸鲸自己的回复，返回气泡数组 */
   /**
    * 这条回复要不要补一张表情包（实验性）。

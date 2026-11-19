@@ -9,14 +9,8 @@
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
 
 const persona = require('../src/persona');
-const { Bot } = require('../src/pipeline/chat');
-const { Store } = require('../src/memory/store');
-const { DEFAULT_CONFIG } = require('../src/infra/config');
 
 const cfgWith = (level, chance) => ({ persona: { emojiLevel: level }, chat: { emojiChance: chance } });
 
@@ -51,39 +45,6 @@ test('颜文字池里有真的颜文字，不是占位符', () => {
   assert.equal(typeof persona.kaomojiPick(() => 0.5), 'string');
 });
 
-function makeBot(level) {
-  const config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-  config.persona.emojiLevel = level;
-  delete config.chat.emojiChance; // 模拟「面板里没调概率」，让它跟着档位走
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-emoji-'));
-  const store = new Store({ file: path.join(dir, 'store.json'), limits: config.memory });
-  const bot = new Bot({
-    config, store, logger: null, mockChunkDelayMs: 0,
-    llm: { isMock: true, model: 'mock', reload() {}, describe() { return {}; } },
-  });
-  return { bot, store, cleanup: () => { store.close(); fs.rmSync(dir, { recursive: true, force: true, maxRetries: 6, retryDelay: 60 }); } };
-}
-
-test('「关」时一条都不加料', () => {
-  const { bot, cleanup } = makeBot('关');
-  bot.rng = () => 0; // 最容易被抽中
-  for (let i = 0; i < 20; i += 1) assert.equal(bot.pickEmoji('今天好累'), '今天好累');
-  cleanup();
-});
-
-test('「多」时能产出颜文字（以前只有 emoji，颜文字永远不出现）', () => {
-  const { bot, cleanup } = makeBot('多');
-  bot.rng = () => 0; // 必中，且走颜文字分支（第一次 0 不大于概率，第二次 0 < 0.5）
-  const out = bot.pickEmoji('今天好累');
-  assert.match(out, /^今天好累 /, '应当在句尾加料');
-  const tail = out.replace('今天好累 ', '');
-  assert.ok(persona.KAOMOJI.includes(tail), '加的是颜文字：' + tail);
-  cleanup();
-});
-
-test('「正常」时加了料也不会重复加（本身带 emoji 就跳过）', () => {
-  const { bot, cleanup } = makeBot('正常');
-  bot.rng = () => 0;
-  assert.equal(bot.pickEmoji('好耶🐋'), '好耶🐋');
-  cleanup();
-});
+// 「关时不加料」「多加颜文字」「已带 emoji 跳过」三类行为在 bot.test.js 的
+// 「追加表情按整轮剩余字数决定…」里通过 finalize()（生产真实链路）覆盖，
+// pickEmoji 死代码删除后不再单独测。
