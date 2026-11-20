@@ -119,6 +119,23 @@ test('短回复接上文：随便了你做 → 沿用上一句', async () => {
   assert.match(out.output.text || '', /已创建目录/);
 });
 
+test('新建一个还不存在的目录（如 小本本）不再报路径不存在', async () => {
+  const out = await gen('在文档里建个小本本文件夹', {
+    chatId: 'mkdir-missing-chat',
+    overrides: { prefix: '', roots: [tmp] },
+    model: async () => JSON.stringify({ action: 'mkdir', path: path.join(tmp, '小本本') }),
+  });
+  assert.match(out.output.text || '', /已创建目录/);
+  assert.ok(fs.existsSync(path.join(tmp, '小本本')));
+  const out2 = await gen('在小本本里建 notes.md，内容：hello', {
+    chatId: 'mkdir-missing-chat',
+    overrides: { prefix: '', roots: [tmp] },
+    model: async () => JSON.stringify({ action: 'create', path: path.join(tmp, '小本本', 'notes.md'), content: 'hello' }),
+  });
+  assert.match(out2.output.text || '', /已创建/);
+  assert.strictEqual(fs.readFileSync(path.join(tmp, '小本本', 'notes.md'), 'utf8'), 'hello');
+});
+
 // ---- 触发与作用域 ----
 
 test('普通聊天不抢话：pre_reply 返回 pass', async () => {

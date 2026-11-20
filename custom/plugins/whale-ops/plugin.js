@@ -299,7 +299,11 @@ function natural(raw) {
 function parseCreate(t) {
   const m = String(t || '').match(/^(?:在|到)\s*(.+?)\s*(?:里面|里|下|上)?\s*(?:新建|创建|建|写|生成)(?:一个|个)?\s*(?:文件|文本|txt|md|json)?\s*(?:叫|名为|名字叫)?\s*([^\s，,：:。]+)?\s*(?:[，,]\s*(?:内容|写着|写入|内容是)[:：]?\s*([\s\S]*))?$/);
   if (!m) return null;
-  return { dir: m[1].trim(), name: (m[2] || '').trim(), content: m[3] || '' };
+  const name = (m[2] || '').trim();
+  const content = m[3] || '';
+  // 名字没有扩展名又没有内容：多半是「建个文件夹」或指代不清，交给模型判断
+  if (!name || (!/\.[A-Za-z0-9]{1,8}$/.test(name) && !content.trim())) return null;
+  return { dir: m[1].trim(), name, content };
 }
 
 function bodyOf(settings, text) {
@@ -327,8 +331,9 @@ function within(roots, target) {
   return false;
 }
 
-async function resolveSafe(settings, input) {
+async function resolveSafe(settings, input, opts) {
   if (!input) return null;
+  const allowMissing = Boolean(opts && opts.allowMissing);
   const expanded = input.replace(/^~(?=$|[\\/])/, os.homedir());
   const target = path.resolve(settings.roots[0] || os.homedir(), expanded);
   if (!within(settings.roots, target)) return null;
@@ -337,6 +342,21 @@ async function resolveSafe(settings, input) {
     if (!within(settings.roots, real)) return null;
     return real;
   } catch {
+    if (!allowMissing) return null;
+    // 目标还不存在（新建目录/文件）：把最近一级存在的祖先做 realpath 校验，再把剩余段拼回去
+    let probe = target;
+    const tail = [];
+    while (probe && probe !== path.dirname(probe)) {
+      try {
+        const real = await fsp.realpath(probe);
+        if (!within(settings.roots, real)) return null;
+        const joined = path.join(real, ...tail);
+        return within(settings.roots, joined) ? joined : null;
+      } catch {
+        tail.unshift(path.basename(probe));
+        probe = path.dirname(probe);
+      }
+    }
     return null;
   }
 }
@@ -462,7 +482,7 @@ async function runPlan(ctx, settings, plan) {
     }
 
     if (action === 'mkdir') {
-      const abs = safeDest(settings, target);
+      const abs = await resolveSafe(settings, target, { allowMissing: true });
       if (!abs) return { text: '建不了：' + target + ' 不在允许范围。' };
       await fsp.mkdir(abs, { recursive: true });
       return { text: '已创建目录：' + abs };
@@ -615,15 +635,21 @@ function parseCreateArg(arg) {
 async function createFile(settings, parsed) {
   let name = String(parsed.name || '').trim();
   if (!name || /[\\/]/.test(name)) return '文件名不合法：' + (name || '（空）');
-  if (!/\.[A-Za-z0-9]{1,8}$/.test(name)) name += '.txt';
+  const content = String(parsed.content || '');
+  const asFolder = !/\.[A-Za-z0-9]{1,8}$/.test(name) && !content.trim();
+  if (!asFolder && !/\.[A-Za-z0-9]{1,8}$/.test(name)) name += '.txt';
   let dirInput = String(parsed.dir || '').trim();
   if (FOLDER_MAP[dirInput]) dirInput = path.join(os.homedir(), FOLDER_MAP[dirInput]);
-  const dir = await resolveSafe(settings, dirInput);
+  const dir = await resolveSafe(settings, dirInput, { allowMissing: true });
   if (!dir) return '建不了：' + dirInput + ' —— ' + missReason(settings, dirInput);
   const target = path.join(dir, name);
   if (fs.existsSync(target)) return '已存在，不覆盖：' + target;
-  await fsp.writeFile(target, String(parsed.content || ''), 'utf8');
-  return '已创建：' + target + '（' + human(Buffer.byteLength(String(parsed.content || ''), 'utf8')) + '）';
+  if (asFolder) {
+    await fsp.mkdir(target, { recursive: true });
+    return '已创建目录：' + target;
+  }
+  await fsp.writeFile(target, content, 'utf8');
+  return '已创建：' + target + '（' + human(Buffer.byteLength(content, 'utf8')) + '）';
 }
 
 // ---------------------------------------------------------------------------
@@ -741,7 +767,7 @@ async function createXlsx(settings, dirInput, name, content) {
   if (!name || /[\\/]/.test(name)) return '文件名不合法：' + (name || '（空）');
   let dir = String(dirInput || '').trim();
   if (FOLDER_MAP[dir]) dir = path.join(os.homedir(), FOLDER_MAP[dir]);
-  const absDir = await resolveSafe(settings, dir);
+  const absDir = await resolveSafe(settings, dir, { allowMissing: true });
   if (!absDir) return '建不了：' + dir + ' —— ' + missReason(settings, dir);
   const target = path.join(absDir, name);
   if (fs.existsSync(target)) return '已存在，不覆盖：' + target;
