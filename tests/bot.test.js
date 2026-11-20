@@ -335,6 +335,25 @@ test('魔咒：主人输入才生效，其他人输入无效', async () => {
   cleanup();
 });
 
+test('长文里提到「静音」不应当成管理命令；真正的禁言命令仍提示配魔咒', async () => {
+  const config = makeConfig();
+  config.admin = { spell: '', minutes: 30, allowAll: false };
+  const { bot, cleanup } = makeBot({ config });
+  const master = (text) => privateMsg(text, { platform: 'wechat', senderName: 'Master', senderId: 'wxid_test_master' });
+  try {
+    const article = '装完 Codex 不知道干什么？当然是猛做视频。ffmpeg-skill：裁切、拼接、横屏转竖屏、去静音、压缩、加字幕都能直接用自然语言让 Codex 做。先收藏，按自己的视频类型安装。';
+    const d = await bot.decide(master(article));
+    assert.equal(d.action, 'reply', '教剪辑的长文按普通聊天处理');
+    assert.equal(d.commandType, undefined);
+
+    const hint = await bot.decide(master('禁言 深海鱼塘'));
+    assert.equal(hint.commandType, 'admin_hint');
+    assert.match(hint.text, /还没有配置管理员魔咒/);
+  } finally {
+    cleanup();
+  }
+});
+
 test('管理员命令：状态 / 演示模式 / 主动接话 / 退出管理', async () => {
   const { bot, config, cleanup } = makeBot();
   const master = (text) => privateMsg(text, { platform: 'wechat', senderName: 'Master', senderId: 'wxid_test_master' });
