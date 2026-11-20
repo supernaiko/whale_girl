@@ -23,11 +23,12 @@ function available() {
   return fs.existsSync(codexEntry()) && typeof process.execPath === 'string';
 }
 
-function buildPrompt({ name, desc, mood, lines, selfCount = 0, extra = '' }) {
+function buildPrompt({ name, desc, mood, lines, selfCount = 0, extra = '', time = '' }) {
   return [
     '你在帮她发一条朋友圈。下面是候选照片（用 -i 传给你的图片，按顺序，下标从 0 开始）。',
     '挑一张最合适的，再写一句配文。',
     '',
+    time ? '现在：' + time + '。文案的时间、场景要跟这个点对得上。' : '',
     '选图规则（重要）：',
     '1) 优先选没有人的照片：食物、街景、物件、天空、猫、背影都可以。',
     '2) 如果画面里必须有人物，只允许选她本人（说明里标了“她本人”的那几张）；不要选陌生人的正脸、不要选多人合影、不要选网红图。',
@@ -78,7 +79,7 @@ function choose(input = {}) {
   if (!images.length || !available()) return Promise.resolve(null);
   const prompt = buildPrompt({
     name: input.name, desc: input.desc, mood: input.mood, lines: input.lines,
-    selfCount: input.selfCount || 0, extra: input.extra || '',
+    selfCount: input.selfCount || 0, extra: input.extra || '', time: input.time || '',
   });
   const args = [
     codexEntry(), 'exec',

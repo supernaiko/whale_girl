@@ -300,9 +300,11 @@ class MomentsPublisher {
     const picked = await momentsCodex.choose({
       images: ordered.map(item => item.file),
       selfCount: selfFiles.length,
-      name: persona?.name, desc: persona?.desc,
+      name: persona?.name,
+      desc: [persona?.personality, persona?.desc].filter(Boolean).join('；'),
       mood: bond ? (bond.label || '') : '',
       lines,
+      time: (() => { const t = timeBrief(); return t.text + '。' + t.guide; })(),
       logger: this.logger,
     });
     if (!picked) return false;
@@ -352,7 +354,7 @@ class MomentsPublisher {
     const moodLine = bond
       ? ('你此刻心情：' + (bond.label || '说不太清') + (bond.why ? '（' + bond.why + '）' : '') + '。')
       : '';
-    const personaLine = '你是「' + persona.name + '」，平时说话温柔但有点小倔、嘴硬心软，不是甜腻人设，也不高冷；'
+    const personaLine = '你是「' + persona.name + '」，' + (persona.personality || '温柔心软、开朗活泼') + '。'
       + (persona.desc ? '语气参考：' + persona.desc : '');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
@@ -535,9 +537,10 @@ class MomentsPublisher {
       const root = this.config?.root || path.resolve(__dirname, '../..');
       const file = path.join(root, 'data', 'persona.json');
       const persona = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const personality = String(persona.personality || '').replace(/\s+/g, ' ').trim();
       const desc = String(persona.customPrompt || '').replace(/\s+/g, ' ').slice(0, 100);
-      return { name: String(persona.name || '雅小奈'), desc };
-    } catch { return { name: '雅小奈', desc: '' }; }
+      return { name: String(persona.name || '雅小奈'), personality, desc };
+    } catch { return { name: '雅小奈', personality: '', desc: '' }; }
   }
 
   async prepareImages() {
