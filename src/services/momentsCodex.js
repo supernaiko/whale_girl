@@ -166,6 +166,16 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       deviceLine = '画面里出现的电子设备只能是她自己的：' + (device || dev.phone) + '。' + (dev.rule || '');
     }
 
+    // 美甲场景：她做的是长款网红甲，不是短圆自然甲。
+    let nailsLine = '';
+    if (character && character.nails && /美甲|指甲|做指甲|甲油/.test(text)) {
+      nailsLine = '这次的美甲：' + character.nails + '。';
+    }
+
+    // 手部与首饰的固定风格，出图时保持一致。
+    const handsLine = character && character.hands ? ('手部：' + character.hands + '。') : '';
+    const jewelryLine = character && character.jewelry ? ('首饰：' + character.jewelry + '。') : '';
+
     const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
     let mode = view;
     if (!mode || mode === 'auto') {
@@ -190,6 +200,9 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       outfit ? ('这次穿：' + outfit + '（衣服要和场景对得上，不要穿错场合）') : '',
       (character && character.wardrobeRule) ? ('服装要求：' + character.wardrobeRule) : '',
       deviceLine ? deviceLine : '',
+      nailsLine ? nailsLine : '',
+      handsLine,
+      jewelryLine,
       '',
       '这次的生活场景：' + text.slice(0, 200),
     '先把这句话还原成一个具体瞬间（谁在哪、手里拿着什么、眼前第一眼看到什么、光线和时间），再拍那一瞬间。',
