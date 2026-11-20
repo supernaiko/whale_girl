@@ -137,11 +137,11 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     try { fs.rmSync(outFile, { force: true }); } catch { /* ignore */ }
     const who = character && character.look ? character.look : '一个二十多岁的女生，长发，身材偏瘦，日常穿宽松卫衣和牛仔裤';
     const optional = character && character.optional ? character.optional : '';
+    const text = String(scene || '');
     let outfit = '';
     let hairstyle = '';
     let accessory = '';
     if (character) {
-      const text = String(scene || '');
       const byScene = character.wardrobeByScene || {};
       const pick = (list) => (Array.isArray(list) && list.length ? list[Math.floor(Math.random() * list.length)] : '');
       const key = /睡衣|床上|居家|沙发|家里|房间/.test(text) ? 'home'
@@ -167,7 +167,6 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     }
 
     const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
-    const text = String(scene || '');
     let mode = view;
     if (!mode || mode === 'auto') {
       if (/出去玩|旅行|景点|海边|爬山|逛街|打卡|拍照/.test(text)) mode = 'thirdPerson';
