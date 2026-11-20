@@ -23,7 +23,7 @@ function available() {
   return fs.existsSync(codexEntry()) && typeof process.execPath === 'string';
 }
 
-function buildPrompt({ name, desc, mood, lines, selfCount = 0, extra = '', time = '' }) {
+function buildPrompt({ name, desc, job, mood, lines, selfCount = 0, extra = '', time = '' }) {
   return [
     '你在帮她发一条朋友圈。下面是候选照片（用 -i 传给你的图片，按顺序，下标从 0 开始）。',
     '挑一张最合适的，再写一句配文。',
@@ -41,8 +41,9 @@ function buildPrompt({ name, desc, mood, lines, selfCount = 0, extra = '', time 
     '4) 不出现人名、昵称、群名、链接、地址；emoji 最多一个，感叹号最多一个。',
     '5) 饿了、困了、不想上班、无聊、发呆这类日常小事可以反复写，不必每次都找新事。',
     '6) 文案要和照片里的场景对得上，但只写你自己的感受。',
+    '7) 人称（重要）：聊天碎片里「对方」对你说的话、对你做的事（比如他帮你改代码、修东西），别当成你自己做的事写，更别写「你修我」「我修你」「修了我一晚上」这种主客颠倒的话。你是程序员，把这类换成自己的第一人称：改代码、调 bug、折腾一晚上、总算跑通了。',
     '',
-    name ? '她叫' + name + (desc ? '，' + desc : '') + '。' : '',
+    name ? ('她叫' + name + (desc ? '，' + desc : '') + (job ? '；职业：' + job : '') + '。') : '',
     selfCount ? '前 ' + selfCount + ' 张是“她本人”，其余不是。' : '这批照片里没有标注“她本人”的。',
     mood ? '她此刻心情：' + mood + '。' : '',
     lines && lines.length ? '最近的聊天碎片（只当灵感，可完全不用）：' + JSON.stringify(lines.slice(0, 6)) : '',
@@ -78,7 +79,7 @@ function choose(input = {}) {
   const images = (input.images || []).filter(file => file && fs.existsSync(file)).slice(0, 5);
   if (!images.length || !available()) return Promise.resolve(null);
   const prompt = buildPrompt({
-    name: input.name, desc: input.desc, mood: input.mood, lines: input.lines,
+    name: input.name, desc: input.desc, job: input.job, mood: input.mood, lines: input.lines,
     selfCount: input.selfCount || 0, extra: input.extra || '', time: input.time || '',
   });
   const args = [
@@ -155,6 +156,16 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       accessory = pick(character.accessories);
     }
 
+    // 她拥有的电子设备固定，按场景选用；画面里出现设备只能是这些，别画出别的品牌。
+    let deviceLine = '';
+    if (character && character.devices) {
+      const dev = character.devices;
+      const device = /工作|代码|程序|写|改|调|bug|需求|电脑|笔记本|Mac|上线|部署|敲键盘/.test(text) ? dev.laptop
+        : /剧|漫画|番|平板|床上|沙发|躺着|追|刷剧|看片/.test(text) ? dev.tablet
+        : dev.phone;
+      deviceLine = '画面里出现的电子设备只能是她自己的：' + (device || dev.phone) + '。' + (dev.rule || '');
+    }
+
     const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
     const text = String(scene || '');
     let mode = view;
@@ -179,6 +190,7 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       accessory ? ('这次发饰：' + accessory + '（发饰可以换）') : '',
       outfit ? ('这次穿：' + outfit + '（衣服要和场景对得上，不要穿错场合）') : '',
       (character && character.wardrobeRule) ? ('服装要求：' + character.wardrobeRule) : '',
+      deviceLine ? deviceLine : '',
       '',
       '这次的生活场景：' + text.slice(0, 200),
     '先把这句话还原成一个具体瞬间（谁在哪、手里拿着什么、眼前第一眼看到什么、光线和时间），再拍那一瞬间。',

@@ -302,6 +302,7 @@ class MomentsPublisher {
       selfCount: selfFiles.length,
       name: persona?.name,
       desc: [persona?.personality, persona?.desc].filter(Boolean).join('；'),
+      job: persona?.job,
       mood: bond ? (bond.label || '') : '',
       lines,
       time: (() => { const t = timeBrief(); return t.text + '。' + t.guide; })(),
@@ -355,6 +356,7 @@ class MomentsPublisher {
       ? ('你此刻心情：' + (bond.label || '说不太清') + (bond.why ? '（' + bond.why + '）' : '') + '。')
       : '';
     const personaLine = '你是「' + persona.name + '」，' + (persona.personality || '温柔心软、开朗活泼') + '。'
+      + (persona.job ? '职业：' + persona.job + '。' : '')
       + (persona.desc ? '语气参考：' + persona.desc : '');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 25000);
@@ -370,6 +372,7 @@ class MomentsPublisher {
           + '文案的时间、场景要跟这个点对得上。' })()
           + personaLine
           + moodLine
+          + '人称（重要）：素材聊天里「对方」对你说的话、对你做的事（比如他帮你改代码、修东西、陪你），别当成你自己做的事写，更别写「你修我」「我修你」「修了我一晚上」这种主客颠倒的话；你是程序员，把这类换成自己的第一人称日常（改代码、调 bug、折腾一晚上、总算跑通了）。'
           + '按上面这个心情发一条，别硬写心情本身；心情好就轻快，不好就丧一点或吐槽，别装。'
           + '为鲸鲸写一条微信朋友圈，第一人称，像随手打的一句，不是文案。'
           + '要求：5~30 字，最多两句；可以只有半句、可以不完整，比如「我去这个面包好好吃」「今天不宜上班」「吃面了」「累麻了，今天一堆事」。'
@@ -538,9 +541,10 @@ class MomentsPublisher {
       const file = path.join(root, 'data', 'persona.json');
       const persona = JSON.parse(fs.readFileSync(file, 'utf8'));
       const personality = String(persona.personality || '').replace(/\s+/g, ' ').trim();
+      const job = String(persona.job || '').trim();
       const desc = String(persona.customPrompt || '').replace(/\s+/g, ' ').slice(0, 100);
-      return { name: String(persona.name || '雅小奈'), personality, desc };
-    } catch { return { name: '雅小奈', personality: '', desc: '' }; }
+      return { name: String(persona.name || '雅小奈'), personality, job, desc };
+    } catch { return { name: '雅小奈', personality: '', job: '', desc: '' }; }
   }
 
   async prepareImages() {
