@@ -433,6 +433,20 @@ class ReceiverMixin:
                         and win32gui.IsWindow(hwnd)
                         and win32process.GetWindowThreadProcessId(hwnd)[1] == pid)
 
+            if not account_matches():
+                G.log('图片预览兜底跳过 reason=account_unverified')
+                return b''
+            # 微信不在前台时主动带回前台：手机发图 / 窗口最小化时，不激活就永远走不到
+            # 界面兜底，图片只能「白屏」。这里只在磁盘取图失败后的最后手段执行。
+            if win32gui.GetForegroundWindow() != hwnd:
+                try:
+                    from window_activation import activate_target
+                    brought = activate_target(hwnd)
+                    G.log('图片预览兜底：微信不在前台，尝试带回前台 result=%s' % bool(brought))
+                    if brought:
+                        G.time.sleep(0.25)
+                except Exception as _exc:
+                    G.log('图片预览兜底激活异常 type=%s' % type(_exc).__name__)
             if not account_matches() or win32gui.GetForegroundWindow() != hwnd:
                 G.log('图片预览兜底跳过 reason=account_or_foreground_changed')
                 return b''
