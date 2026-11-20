@@ -1221,7 +1221,11 @@ function systemProxy() {
     if (!m) return PROXY_CACHE;
     const raw = m[1].trim();
     const http = /http=([^;]+)/i.exec(raw);
-    PROXY_CACHE = (http ? http[1] : raw).trim();
+    let v = (http ? http[1] : raw).trim();
+    // Codex 的 reqwest 要求代理带 scheme；注册表里常是纯「127.0.0.1:10808」，
+    // 缺 http:// 前缀会被报「Proxy URL scheme not supported」导致 WebSocket 反复重连。
+    if (v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) v = 'http://' + v;
+    PROXY_CACHE = v;
   } catch { /* 没代理就直连 */ }
   return PROXY_CACHE;
 }
