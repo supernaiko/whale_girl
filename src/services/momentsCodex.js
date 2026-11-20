@@ -198,6 +198,11 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       viewRule ? ('拍照方式（重要）：' + viewRule) : '',
       '',
       '风格：' + style,
+      '生活感（重要）：',
+      '1) 表情和眼神每张都要不一样：可以笑、皱眉、发呆、走神、看镜头或看手里的东西，不要每张都低头垂眼、面无表情、同一个角度；',
+      '2) 场景要日常真实，便利店、家里、工位、小饭馆、路边摊都行，别为了出片刻意去海边/景点，偶尔一次就好；',
+      '3) 食物和物品不要完美：煎蛋可以有焦边、煎破、歪着，吐司不规则，饭吃了一半、桌上有点乱，都正常，不要餐厅广告图那种摆盘；',
+      (character && character.candid ? ('4) ' + character.candid) : ''),
       '要求：',
       '1) 竖构图或方构图都可以，像手机相册里的照片；',
       frontView
