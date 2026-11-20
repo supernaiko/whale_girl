@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const web = require('../adapters/websearch');
 const weather = require('../adapters/search/weather');
@@ -153,9 +153,9 @@ async function search({ text = '', history = [], llm, config = {}, now = new Dat
       });
       if (api?.items?.length) return finish(api);
     }
-    const local = await call('web', () => providers.searchResult(q, { ...options(), limit: 4,
+    const local = await call('web', () => providers.searchResult(q, { ...options(), limit: 6,
       maxAgeDays: effectiveMaxAgeDays(`${text} ${q}`, intent.fresh, intent.timeRange) }));
-    return finish(api ? mergeResults(local, api, 4) : local);
+    return finish(api ? mergeResults(local, api, 6) : local);
   };
   let timer, abort;
   try {

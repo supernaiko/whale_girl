@@ -69,6 +69,8 @@ function getText(url, opts = {}) {
           if (redirects >= 5) return finish(searchError('too_many_redirects'));
           let next;
           try { next = new URL(res.headers.location, target); } catch { return finish(searchError('invalid_redirect')); }
+          // 部分站点（如 so.com）会跳到 http，本模块只走 https：原地升级协议再跟。
+          if (next.protocol === 'http:') next = new URL(next.toString().replace(/^http:/, 'https:'));
           if (next.protocol !== 'https:') return finish(searchError('unsupported_protocol'));
           // 旧跳转页立即释放，新连接沿用同一个绝对时限和取消信号。
           clearTimeout(timer);

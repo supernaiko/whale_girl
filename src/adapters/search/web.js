@@ -1,6 +1,7 @@
-'use strict';
+﻿'use strict';
 
 const bing = require('./bing');
+const baidu = require('./baidu');
 const so360 = require('./so360');
 const { remaining, report, errorInfo } = require('./transport');
 const quality = require('../../core/search/quality');
@@ -27,7 +28,7 @@ async function searchResult(query, opts = {}) {
     // 首源最多占大部分预算，给备用源留出机会；极短预算不再切成无意义的小请求。
     const timeoutMs = reserve && left > 100 ? Math.floor(left * 0.65) : left;
     try {
-      const parsed = await ({ bing, so360 }[provider]).search(term, { ...opts, deadline, timeoutMs });
+      const parsed = await ({ bing, baidu, so360 }[provider]).search(term, { ...opts, deadline, timeoutMs });
       const scoped = site ? parsed.filter(item => {
         const host = new URL(item.url).hostname.toLowerCase();
         return host === site.toLowerCase() || host.endsWith('.' + site.toLowerCase());
@@ -66,16 +67,32 @@ async function searchResult(query, opts = {}) {
       if (valid().length >= 2) break;
     }
   }
+  if (valid().length < 2) await ask('baidu', q, true);
   if (valid().length < 2) await ask('so360', q);
   const split = quality.splitFreshness(q, quality.keepRelevant(body, all), opts);
   staleItems.push(...split.staleItems);
   const items = split.items.slice(0, Math.max(1, Math.min(10, Number(opts.limit) || 5)));
+  // 摘要全空（JS 渲染站/纯标题页）时补抓前两条正文，避免模型只拿到一串标题。
+  if (opts.enrich !== false && items.length && items.every(x => !String(x.snippet || '').trim()) && budget() > 1500) {
+    await enrichSnippets(items, Math.min(2, items.length), Math.min(1800, budget() - 200), opts);
+  }
   const reason = items.length ? 'available' : opts.signal?.aborted ? 'aborted' : deadlineExpired || budget() <= 0 ? 'deadline_exceeded'
     : staleItems.length ? 'stale_only' : attempts.every(a => a.status === 'failed') ? attempts.at(-1)?.code || 'no_results' : 'no_results';
   report(opts.trace, 'result', { candidates: all.length, stale: staleItems.length, selected: items.length,
     sources: items.map(x => new URL(x.url).hostname) });
   return result(items, { attempts, staleItems, reason, elapsedMs: Date.now() - started,
     ...(!items.length && ['aborted', 'deadline_exceeded'].includes(reason) ? { status: 'failed' } : {}) });
+}
+
+async function enrichSnippets(items, count, timeoutMs, opts) {
+  const { describeLink } = require('../links');
+  await Promise.all(items.slice(0, count).map(async (item) => {
+    try {
+      const info = await describeLink(item.url, { timeoutMs, allowPrivate: false, signal: opts.signal });
+      const text = info?.ok ? String(info.article || info.description || '').trim() : '';
+      if (text) item.snippet = text.slice(0, 400);
+    } catch { /* 抓不到就保持原样 */ }
+  }));
 }
 
 module.exports = { searchResult };
