@@ -79,12 +79,15 @@ def capture_preview_image(request, *, win, process, uia, locator, inp, grab, pau
     if (uia.current_chat() or '').strip() != request['chat']:
         raise PreviewUnavailable('conversation_mismatch')
     messages = uia._message_list()
-    rows = locator._visible_rows(messages) if messages is not None else []
-    index = locator._align_index(rows, request['sequence'], request['target'])
-    if index is None:
+    if messages is None:
         raise PreviewUnavailable('message_not_aligned')
-    target = rows[index][2]
-    if target.IsOffscreen:
+    # 目标图片可能被新消息顶出可视区（虚拟化列表只实例化十来行）：和取原件
+    # 一样按数据库行差把列表滚过去再认，不要只认当前屏。滚完 target 已可见。
+    deadline = time.time() + max(3.0, CAPTURE_TIMEOUT - 7.0)
+    target, _note = locator._locate_image_row(
+        request['target'], messages, request['sequence'],
+        uia=uia, hwnd=main, pid=pid, deadline=deadline, max_scrolls=3)
+    if target is None or target.IsOffscreen:
         raise PreviewUnavailable('message_not_aligned')
 
     before = _visible_previews(win, process, main, pid)
