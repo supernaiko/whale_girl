@@ -122,9 +122,6 @@ class Gateway {
     this.bot = bot;
     this.logger = logger;
     this.stats = { received: 0, replied: 0, sent: 0, failed: 0, lastMessageAt: 0, lastError: '' };
-    // 分段缓冲：同一会话收到图片/表情包（无文字）时挂起一个等待窗口，
-    // 窗口内来了文字就丢弃空消息只处理文字（见 handleInbound / _deliver）。
-    this._mediaPending = new Map();
     // 本地桥接的存活信息：桥接每 20 秒来一次心跳，状态接口据此报告「桥接在线 / 离线」
     this.bridge = {
       lastSeen: 0, uia: null, rest: false, listener: null, ffmpeg: null,
@@ -202,50 +199,10 @@ class Gateway {
         `[${this.platform}] 收到 ${msg.chatType === 'group' ? '群' : '私聊'}消息 sender=${tagName(msg.senderName)} ${textMeta(msg.text)}`
       );
     const localWechat = local && this.platform === 'wechat';
-
-    // 连续消息收集：同一会话的消息先攒一小会儿，等对方停手（messageSettleMs）再一次性处理。
-    // 图片/表情包这类空文本消息等得更久（mediaSettleMs），给「发了图再补一句」留出合并窗口。
-    const chatCfg = (this.bot && this.bot.config && this.bot.config.chat) || {};
-    const hasText = Boolean(String(msg.text || '').trim());
-    const settleMs = Number((hasText ? chatCfg.messageSettleMs : chatCfg.mediaSettleMs) || 0);
-    const key = this._mediaChatKey(msg);
-    if (settleMs > 0) {
-      const prev = this._mediaPending.get(key);
-      const records = prev ? prev.records : [];
-      records.push({ msg, localWechat });
-      if (prev) clearTimeout(prev.timer);
-      const last = records[records.length - 1];
-      const timer = setTimeout(() => {
-        this._mediaPending.delete(key);
-        const merged = this._mergeSettled(records);
-        this._deliver(merged, last.localWechat).catch(() => {});
-      }, settleMs);
-      this._mediaPending.set(key, { records, timer });
-      this.logger?.info(
-        `[${this.platform}] 连续消息收集 ${settleMs}ms（已收 ${records.length} 条）sender=${tagName(msg.senderName)}`
-      );
-      return { ok: true, action: 'ignore', reason: 'settle_wait' };
-    }
+    // 本地桥接是「同步请求-响应」：桥接攒完消息（它那侧有 SettleScheduler 做安静窗口合并）
+    // 再 POST 过来、同步等这里的回复。这里不能再延迟合并——一旦立即返回 settle_wait，
+    // 桥接就把这条判成「没接话」，而延迟生成的回复已经回不到那个 HTTP 响应了。
     return this._deliver(msg, localWechat);
-  }
-
-  /** 把收集窗口内的几条消息合并成一条：有文字时文字优先拼接，只有空文本时保留最后一条的媒体。 */
-  _mergeSettled(records) {
-    if (records.length === 1) return records[0].msg;
-    const last = records[records.length - 1];
-    const texts = [];
-    let media = null;
-    for (const r of records) {
-      const text = String(r.msg.text || '').trim();
-      if (text) texts.push(text);
-      if (r.msg.media) media = r.msg.media;
-    }
-    if (!texts.length) return { ...last.msg, text: '', media };
-    return { ...last.msg, text: texts.join('\n') };
-  }
-
-  _mediaChatKey(msg) {
-    return `${this.platform}:${msg.chatId}:${msg.senderId || ''}`;
   }
 
   async _deliver(msg, localWechat) {
