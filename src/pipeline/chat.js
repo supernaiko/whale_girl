@@ -1097,6 +1097,19 @@ class Bot {
         }
       } catch { /* 没发过或读不到就跳过 */ }
     }
+    // 自己的生活记忆：主人私聊才给最近几条，聊到相关话题自然想起，不逐条播报、不复述原文。
+    if (isMaster && !isGroup) {
+      try {
+        const dataDir = this.config.paths?.dataDir || path.join(process.cwd(), 'data');
+        const life = JSON.parse(fs.readFileSync(path.join(dataDir, 'moments', 'self-life.json'), 'utf8'));
+        const recentLife = (Array.isArray(life) ? life : []).slice(-6).filter(item => item && item.text);
+        if (recentLife.length) {
+          system += '\n\n【你的生活近况】这些是你最近的生活片段，聊到相关话题时可以自然提起、接得住话，'
+            + '但别逐条播报、别把原句复述一遍：'
+            + recentLife.map(item => String(item.date || '') + ' ' + String(item.text).slice(0, 40)).join('；');
+        }
+      } catch { /* 没有生活记忆就跳过 */ }
+    }
     // 桥接状态接在本轮状态最后一行；旧行为路径（tail 为空）也照样带上
     const maxBubbles = Number(this.config.chat.maxBubbles) || 2;
     msg.separateRequested = maxBubbles > 1 && SEPARATE_REPLY_RE.test(clean.text || '');

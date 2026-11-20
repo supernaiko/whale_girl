@@ -890,3 +890,65 @@ test('自动发表：默认两条后当天不再尝试，跨日恢复且不补�
   assert.equal(f.publisher.status().status, 'no_material');
   assert.equal(f.calls, 2);
 });
+
+test('朋友圈确认发布后落长期生活记忆，失败或未确认不落', async t => {
+  const lifeOf = (f) => path.join(f.root, 'moments', 'self-life.json');
+
+  // 确认发出 → 落一条
+  const ok = automaticFixture(t);
+  ok.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  const okJob = ok.publisher.claim('fixture');
+  assert.equal(okJob.action, 'publish');
+  ok.publisher.complete({ id: okJob.id, account: 'fixture', publishStatus: 'confirmed' });
+  const okLife = JSON.parse(fs.readFileSync(lifeOf(ok), 'utf8'));
+  assert.equal(okLife.length, 1);
+  assert.equal(okLife[0].text, '我去这个面包好好吃啊');
+  assert.equal(okLife[0].date, '2026-11-19');
+  assert.equal(typeof okLife[0].at, 'number');
+
+  // 失败 → 不落
+  const fail = automaticFixture(t);
+  fail.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  const failJob = fail.publisher.claim('fixture');
+  fail.publisher.complete({ id: failJob.id, account: 'fixture', publishStatus: 'failed' });
+  assert.equal(fs.existsSync(lifeOf(fail)), false);
+
+  // 未确认 → 不落
+  const unk = automaticFixture(t);
+  unk.publisher.claim('fixture');
+  await new Promise(resolve => setImmediate(resolve));
+  const unkJob = unk.publisher.claim('fixture');
+  unk.publisher.complete({ id: unkJob.id, account: 'fixture', publishStatus: 'unconfirmed' });
+  assert.equal(fs.existsSync(lifeOf(unk)), false);
+});
+
+test('生活记忆同一天同文案去重，最多保留最近 60 条', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-self-life-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const now = Date.parse('2026-11-19T10:00:00+08:00');
+  const p = new MomentsPublisher({
+    config: { root, paths: { dataDir: root }, env: { timezone: 'Asia/Shanghai' }, moments: {} },
+    now: () => now,
+  });
+  const file = path.join(root, 'moments', 'self-life.json');
+
+  // 同一天同文案：只落一次
+  p.job = { query: { text: '今天买了棉花糖吃' } };
+  p.rememberLife();
+  p.rememberLife();
+  let list = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(list.length, 1);
+  assert.equal(list[0].text, '今天买了棉花糖吃');
+
+  // 不同文案累计，超过 60 条裁掉最旧的
+  for (let i = 0; i < 70; i++) {
+    p.job = { query: { text: `今天去做了第 ${i} 件事` } };
+    p.rememberLife();
+  }
+  list = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(list.length, 60);
+  assert.equal(list[0].text, '今天去做了第 10 件事');
+  assert.equal(list[59].text, '今天去做了第 69 件事');
+});

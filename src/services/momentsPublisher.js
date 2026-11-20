@@ -607,6 +607,28 @@ class MomentsPublisher {
     } catch { /* 记录失败不影响发表 */ }
   }
 
+  // 记下「这是我自己的一段生活」：朋友圈确认发出后落一条长期生活记忆，
+  // 供聊天里自然想起（买了什么、去了哪），区别于 own-posts 的「刚发了什么」短期快照。
+  rememberLife() {
+    try {
+      const q = this.job && this.job.query ? this.job.query : {};
+      const text = String(q.text || '').trim();
+      if (!text) return;
+      const dataDir = this.config.paths?.dataDir
+        || path.join(this.config?.root || path.resolve(__dirname, '../..'), 'data');
+      const file = path.join(dataDir, 'moments', 'self-life.json');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      let list = [];
+      try { const raw = JSON.parse(fs.readFileSync(file, 'utf8')); if (Array.isArray(raw)) list = raw; } catch { list = []; }
+      const date = this.today();
+      const key = normalized(text);
+      // 同一天同一件事不重复（去空白/标点后相等）
+      if (list.some((e) => e && e.date === date && normalized(e.text) === key)) return;
+      list.push({ date, text: text.slice(0, 120), at: this.now() });
+      fs.writeFileSync(file, JSON.stringify(list.slice(-60)), 'utf8');
+    } catch { /* 记录失败不影响发表 */ }
+  }
+
   dailyCount() {
     return this.state.day === this.today() ? Number(this.state.count) || 0 : 0;
   }
@@ -722,6 +744,8 @@ class MomentsPublisher {
     const error = /^[a-z_]{1,36}$/.test(String(body.error || '')) ? body.error : '';
     // 只有确定没有点过发表才归还当天额度，未确认或丢失回执仍然占额度。
     const release = !this.job.manual && status === 'failed' && this.job.day === this.state.day;
+    // 确认发出才算「她做了这件事」，才落一条长期生活记忆（未确认/失败不落）。
+    if (status === 'confirmed') this.rememberLife();
     this.save({ ...(release ? { count: Math.max(0, Number(this.state.count) - 1) } : {}),
       ...(status === 'failed' ? this.job.previousSource : {}),
       status: ['confirmed', 'unconfirmed', 'failed'].includes(status) ? status : 'unconfirmed', error });
