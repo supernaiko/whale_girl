@@ -203,34 +203,45 @@ class Gateway {
       );
     const localWechat = local && this.platform === 'wechat';
 
-    // 图片/表情包/语音这类没有文字的消息：先挂起一个窗口，看对方会不会接着发下半句。
-    // 用户一句话常分两段（先甩个表情包，停几十秒再打字），直接把空消息回「在呢」会让下半句孤立。
-    const settleMs = Number((this.bot && this.bot.config && this.bot.config.chat && this.bot.config.chat.mediaSettleMs) || 0);
+    // 连续消息收集：同一会话的消息先攒一小会儿，等对方停手（messageSettleMs）再一次性处理。
+    // 图片/表情包这类空文本消息等得更久（mediaSettleMs），给「发了图再补一句」留出合并窗口。
+    const chatCfg = (this.bot && this.bot.config && this.bot.config.chat) || {};
     const hasText = Boolean(String(msg.text || '').trim());
+    const settleMs = Number((hasText ? chatCfg.messageSettleMs : chatCfg.mediaSettleMs) || 0);
     const key = this._mediaChatKey(msg);
-    if (settleMs > 0 && !hasText) {
+    if (settleMs > 0) {
       const prev = this._mediaPending.get(key);
+      const records = prev ? prev.records : [];
+      records.push({ msg, localWechat });
       if (prev) clearTimeout(prev.timer);
-      const record = {
-        msg,
-        localWechat,
-        timer: setTimeout(() => {
-          this._mediaPending.delete(key);
-          this._deliver(msg, localWechat).catch(() => {});
-        }, settleMs),
-      };
-      this._mediaPending.set(key, record);
-      this.logger?.info(`[${this.platform}] 空文本消息进入分段等待 ${settleMs}ms sender=${tagName(msg.senderName)}`);
-      return { ok: true, action: 'ignore', reason: 'media_settle_wait' };
-    }
-    if (hasText && this._mediaPending.has(key)) {
-      // 来了文字：刚才那张图/表情包是分段的前半段，丢弃它，只处理文字。
-      const prev = this._mediaPending.get(key);
-      clearTimeout(prev.timer);
-      this._mediaPending.delete(key);
-      this.logger?.info(`[${this.platform}] 分段合并：丢弃先到的表情包，直接处理文字 sender=${tagName(msg.senderName)}`);
+      const last = records[records.length - 1];
+      const timer = setTimeout(() => {
+        this._mediaPending.delete(key);
+        const merged = this._mergeSettled(records);
+        this._deliver(merged, last.localWechat).catch(() => {});
+      }, settleMs);
+      this._mediaPending.set(key, { records, timer });
+      this.logger?.info(
+        `[${this.platform}] 连续消息收集 ${settleMs}ms（已收 ${records.length} 条）sender=${tagName(msg.senderName)}`
+      );
+      return { ok: true, action: 'ignore', reason: 'settle_wait' };
     }
     return this._deliver(msg, localWechat);
+  }
+
+  /** 把收集窗口内的几条消息合并成一条：有文字时文字优先拼接，只有空文本时保留最后一条的媒体。 */
+  _mergeSettled(records) {
+    if (records.length === 1) return records[0].msg;
+    const last = records[records.length - 1];
+    const texts = [];
+    let media = null;
+    for (const r of records) {
+      const text = String(r.msg.text || '').trim();
+      if (text) texts.push(text);
+      if (r.msg.media) media = r.msg.media;
+    }
+    if (!texts.length) return { ...last.msg, text: '', media };
+    return { ...last.msg, text: texts.join('\n') };
   }
 
   _mediaChatKey(msg) {
