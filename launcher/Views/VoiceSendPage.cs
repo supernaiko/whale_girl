@@ -39,6 +39,8 @@ public sealed class VoiceSendPage : UserControl
     CancellationTokenSource requests=new();
     bool loading;
     bool testing;
+    int voiceSearchSeq;
+    bool searchedRemotely;
     sealed record Device(string Id,string Name){public override string ToString()=>Name;}
 
     public VoiceSendPage(RuntimeSupervisor sup)
@@ -133,11 +135,12 @@ public sealed class VoiceSendPage : UserControl
             var modelOptions=await SpeechProviders.Catalog(selectedProvider,secret,false,"",token);
             token.ThrowIfCancellationRequested();
             string selectedModel=model.Text.Trim();
-            var voiceOptions=await SpeechProviders.Catalog(selectedProvider,secret,true,"",token,model:selectedModel);
+            var voiceOptions=await SpeechProviders.Catalog(selectedProvider,secret,true,search.Text.Trim(),token,model:selectedModel);
             token.ThrowIfCancellationRequested();
             if(model.Text.Trim()!=selectedModel)return;
+            searchedRemotely=!string.IsNullOrWhiteSpace(search.Text.Trim());
             remoteVoices=voiceOptions;BindChoices(models,modelOptions,model,false);BindChoices(voices,remoteVoices,voice,true);
-            status.Text="已读取，保留当前选择。预置音色和该账户的自定义音色可在下拉框中选择。";
+            status.Text=searchedRemotely?$"已按「{search.Text.Trim()}」读取，保留当前选择。":"已读取，保留当前选择。预置音色和该账户的自定义音色可在下拉框中选择。";
         },null,flat:true);
         read.VerticalAlignment=VerticalAlignment.Bottom;Grid.SetColumn(read,1);searchRow.Children.Add(read);
         current.Children.Add(searchRow);
@@ -145,7 +148,11 @@ public sealed class VoiceSendPage : UserControl
         voices.SelectionChanged+=(_,_)=>{if(voices.SelectedItem is BreezeSpeech.Choice c)voice.Text=c.Id;};
         model.LostKeyboardFocus+=(_,_)=>{SelectModel(model.Text.Trim());BindChoices(models,models.Items.Cast<BreezeSpeech.Choice>().ToArray(),model,false);};
         voice.LostKeyboardFocus+=(_,_)=>BindChoices(voices,voices.Items.Cast<BreezeSpeech.Choice>().ToArray(),voice,true);
-        search.TextChanged+=(_,_)=>{if(!loading)BindChoices(voices,remoteVoices,voice,true);};
+        search.TextChanged+=(_,_)=>{
+            if(loading)return;
+            if(providerId=="breezeblue"&&!string.IsNullOrWhiteSpace(search.Text))_=SearchVoicesAsync();
+            else{searchedRemotely=false;BindChoices(voices,remoteVoices,voice,true);}
+        };
         var advanced=new StackPanel{Visibility=Visibility.Collapsed,Margin=new Thickness(0,4,0,0)};
         current.Children.Add(advanced);
         current.Children.Add(Button("高级：手动填写模型 / 音色 ID",_=>{advanced.Visibility=advanced.Visibility==Visibility.Visible?Visibility.Collapsed:Visibility.Visible;return Task.CompletedTask;},null,flat:true));
@@ -271,12 +278,30 @@ public sealed class VoiceSendPage : UserControl
         target.Text=text;target.Visibility=Visibility.Visible;target.SetResourceReference(TextBlock.ForegroundProperty,tone);
     }
 
+    async Task SearchVoicesAsync()
+    {
+        int mine=++voiceSearchSeq;
+        await Task.Delay(450);
+        if(mine!=voiceSearchSeq||loading)return;
+        string secret=string.IsNullOrWhiteSpace(key.Password)?BreezeSpeech.LoadKey(keyFile):key.Password;
+        if(string.IsNullOrWhiteSpace(secret))return;
+        try
+        {
+            var list=await SpeechProviders.Catalog(providerId,secret,true,search.Text.Trim(),CancellationToken.None,model:model.Text.Trim());
+            if(mine!=voiceSearchSeq)return;
+            remoteVoices=list;searchedRemotely=true;
+            BindChoices(voices,list,voice,true);
+            status.Text=$"已按「{search.Text.Trim()}」搜到 {list.Length} 个音色，可在下拉框选择。";
+        }
+        catch(Exception ex){if(mine==voiceSearchSeq)status.Text="搜索音色失败："+ex.Message;}
+    }
+
     void BindChoices(ComboBox combo,BreezeSpeech.Choice[] options,TextBox field,bool isVoice)
     {
         var defaults=SpeechProviders.Defaults(providerId);
         string id=string.IsNullOrWhiteSpace(field.Text)?(isVoice?defaults.Voice:defaults.Model):field.Text.Trim();
         var choices=SpeechProviders.Choices(providerId,options,id,isVoice,model.Text);
-        if(isVoice&&!string.IsNullOrWhiteSpace(search.Text))choices=choices.Where(c=>c.Id==id||(c.Name??"").Contains(search.Text.Trim(),StringComparison.OrdinalIgnoreCase)||c.Id.Contains(search.Text.Trim(),StringComparison.OrdinalIgnoreCase)).ToArray();
+        if(isVoice&&!string.IsNullOrWhiteSpace(search.Text)&&!searchedRemotely)choices=choices.Where(c=>c.Id==id||(c.Name??"").Contains(search.Text.Trim(),StringComparison.OrdinalIgnoreCase)||c.Id.Contains(search.Text.Trim(),StringComparison.OrdinalIgnoreCase)).ToArray();
         combo.ItemsSource=choices;combo.SelectedItem=choices.First(c=>c.Id==id);field.Text=id;
     }
     void SelectModel(string selected)
