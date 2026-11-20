@@ -178,7 +178,7 @@ const DEFAULT_CONFIG = {
     privateMaxChars: 100, groupMaxChars: 70, historyTurns: 120, groupHistoryTurns: 100,
     maxBubbles: 2, discussionMaxChars: 400, emojiChance: 0,
     // 连续消息收集：最后一条后安静多久再处理；群聊另有从首条开始的最大等待。
-    messageSettleMs: 3000, groupMaxBatchWaitMs: 5000,
+    messageSettleMs: 15000, groupMaxBatchWaitMs: 20000,
     // 图片/表情包/语音等没有文字的消息：先等这么久，看对方会不会接着发下半句。
     // 一句话常分两段（先发个表情包、停几十秒再打字），直接把空消息回「在呢」会让下半句孤立。
     mediaSettleMs: 30000,
