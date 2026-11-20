@@ -227,6 +227,15 @@ function natural(raw) {
   if (parseFileSend(t) || /^发文件(?:\s|$)/.test(t)) return t;
   if (/^(?:电脑|助手|插件)?状态$/.test(t)) return '状态';
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
+  // 「用 codex 在桌面建个 md」「使用 codex 让他…」：动词后面必须跟得上具体任务才接，
+  // 免得把「用 codex 要不要钱」这类提问也抢过来。
+  const codexAsk = t.match(/^(?:看看|看下|试试|试一下|帮我|麻烦你?)?\s*(?:能不能|能否|可不可以|可以)?\s*(?:用|使用|让|交给)\s*codex\s*([\s\S]*)$/i);
+  if (codexAsk) {
+    const task = codexAsk[1].replace(/^[\s，,：:、]+/, '').trim();
+    if (task && !/^(要不要|多少钱|收费|免费|贵|是什么|干什么)/.test(task)) return 'codex ' + task;
+  }
+  // 光说「codex」「调 codex」「用 codex」没给任务：留给分发去问要做什么，别让模型自己瞎承诺。
+  if (/^(?:调|控制|用|使用|让|交给)?\s*codex\s*(?:呢|吗)?[。！!？?]*$/i.test(t)) return 'codex';
   // 疑问句/讨价还价（「看看能不能…」「怎么…」「你的记忆有问题吗」）一律不接，交给鲸鲸
   if (/(能不能|可不可以|可以吗|会不会|怎么办|为什么|怎么|有问题吗|有什么问题|怎么回事|还记得吗|对不对|行不行|好不好|吗[？?]?$)/.test(t)) return null;
 
@@ -950,6 +959,8 @@ function recallLast(whale, chatId, maxAgeMs) {
 }
 
 const SHORT_FOLLOW = /^(随便|你定|你看着办|看着办|都行|都可以|可以|行|好|嗯|对|是|就这样|你来)((吧|了|的|啊|呀|哦|你做|你来|你定|就行|听你的))*$/;
+// 接上一句命令的短话：「你听明白就做」「按这个做」——不含任务本身，要回看上一条
+const CONTINUE = /^(?:你?听明白就做|就照这个|按这个做|照着做|照做|就按这样|继续做|接着做|接着来|按刚才说的做)[。！!]*$/;
 
 // ---------------------------------------------------------------------------
 // 命令分发
@@ -1002,6 +1013,11 @@ async function dispatch(ctx, settings, state) {
   const text = String(message.text || '');
   let body = bodyOf(settings, text);
   if (body === null && isConfirmWord(text.trim()) && state.pending) body = text.trim();
+  // 「你听明白就做」这类接续话：拿上一句的命令继续（pre_reply 已经保证没覆盖上一句）
+  if (body === null && CONTINUE.test(text.trim())) {
+    const prev = recallLast(whale, chatId);
+    if (prev) body = bodyOf(settings, prev);
+  }
   if (body === null) return { text: '' };
 
   if (isConfirmWord(body)) {
@@ -1084,9 +1100,13 @@ function splitWorkspace(arg, settings) {
   const text = String(arg || '').trim();
   const match = text.match(/^(.*?)\s*在\s*([^\s]+)\s*$/);
   if (!match) return { task: text, cwd: settings.dsh.workspace };
+  const task = match[1].trim();
+  // 「用codex在桌面建个1.txt」这种「在」前没有空格的写法，match[1] 会是空的；
+  // 这时整句都是任务，别把它当成路径吞掉。
+  if (!task) return { task: text, cwd: settings.dsh.workspace };
   const dir = path.resolve(settings.roots[0] || os.homedir(), match[2]);
   return {
-    task: match[1].trim(),
+    task,
     cwd: within(settings.roots, dir) ? dir : settings.dsh.workspace,
   };
 }
@@ -1320,7 +1340,7 @@ exports.hooks = {
       flushPending(ctx.whale, message.chatId, message.chatType).catch(() => {});
       const system = typeof ctx.system === 'string' ? ctx.system : '';
       if (!system || system.includes('【能力事实】')) return {};
-      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
+      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；以前对话里你说过「codex 我调不了」，那是旧版本的旧说法，现在插件已经支持 Codex，别再重复这句话。不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
     } catch {
       return {};
     }
@@ -1338,8 +1358,10 @@ exports.hooks = {
       const state = plain(ctx.state) ? ctx.state : {};
       const confirm = isConfirmWord(text.trim()) && Boolean(state.pending);
       const follow = body === null && SHORT_FOLLOW.test(text.trim()) && Boolean(recallLast(ctx.whale, chatId));
-      if (body !== null || confirm || follow) {
-        rememberLast(ctx.whale, chatId, text);
+      // 「你听明白就做」这类接续话：要回看上一句命令，所以别把它自己记成上一句
+      const cont = body === null && CONTINUE.test(text.trim()) && Boolean(recallLast(ctx.whale, chatId));
+      if (body !== null || confirm || follow || cont) {
+        if (!cont) rememberLast(ctx.whale, chatId, text);
         return { action: 'wake' };
       }
       rememberLast(ctx.whale, chatId, text);
