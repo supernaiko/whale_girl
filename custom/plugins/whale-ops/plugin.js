@@ -25,7 +25,7 @@ const fsp = fs.promises;
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, execFileSync } = require('node:child_process');
-const CODEX_BIN = path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+const CODEX_BIN = process.env.WHALE_CODEX_BIN || path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
   'npm', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
 
 const MAX_REPLY = 1200;
@@ -1230,13 +1230,24 @@ function systemProxy() {
   return PROXY_CACHE;
 }
 
+// 「找歌词/查资料」这类任务，Codex 默认容易只回一串链接；把要求写进任务里，
+// 让它直接给出内容本身。建文件/改代码这类任务不加，避免干扰。
+const CONTENT_ASK = /(找|查|搜|查一下|搜一下|歌词|原文|正文|资料|是什么|什么意思|多少钱|价格|新闻|介绍|是谁|怎么样)/;
+const FILE_ASK = /(建|创建|新建|写|生成|做|改|修|删|移动|复制|重命名|装|安装|运行|跑|执行|导出|转换|保存)/;
+function answerFirst(task) {
+  const t = String(task == null ? '' : task).trim();
+  if (!t || !CONTENT_ASK.test(t) || FILE_ASK.test(t)) return t;
+  return '【输出要求】最终回复里直接给出需要的内容本身（歌词、正文、数据、名单、结论等），完整抄写或整理；不要只给链接、标题或「点开看」。确实找不到原文时，才说明原因并附链接。\n\n任务：' + t;
+}
+
 function startCodex(task, cwd, logDir) {
+  const finalTask = answerFirst(task);
   const outFile = path.join(os.tmpdir(), 'codex-' + process.pid + '-' + Date.now() + '.txt');
   const logFile = path.join(logDir || os.tmpdir(), 'codex', 'run-' + Date.now() + '.log');
-  try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.writeFileSync(logFile, '# cwd: ' + cwd + '\n# task-b64: ' + Buffer.from(task, 'utf8').toString('base64') + '\n'); } catch { /* 写不了就只走内存 */ }
+  try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.writeFileSync(logFile, '# cwd: ' + cwd + '\n# task-b64: ' + Buffer.from(finalTask, 'utf8').toString('base64') + '\n'); } catch { /* 写不了就只走内存 */ }
   // 这台机器上 workspace-write 沙箱会把所有目录误判成只读，只能退到 danger-full-access
   const args = [CODEX_BIN, 'exec', '--skip-git-repo-check', '--cd', cwd,
-    '--sandbox', 'danger-full-access', '--output-last-message', outFile, '--json', task];
+    '--sandbox', 'danger-full-access', '--output-last-message', outFile, '--json', finalTask];
   const proxy = systemProxy();
   const env = proxy ? { ...process.env, HTTP_PROXY: proxy, HTTPS_PROXY: proxy, ALL_PROXY: proxy } : process.env;
   const child = spawn(process.execPath, args, { cwd, windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });

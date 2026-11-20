@@ -11,6 +11,22 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+// 假 Codex：把收到的任务写到 STUB_TASK_FILE 后直接退出，测试不真跑 Codex
+const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-ops-codex-'));
+const stubCodex = path.join(stubDir, 'codex.js');
+fs.writeFileSync(stubCodex, [
+  "'use strict';",
+  "const fs = require('fs');",
+  "const args = process.argv.slice(2);",
+  "const outAt = args.indexOf('--output-last-message');",
+  "const out = outAt >= 0 ? args[outAt + 1] : '';",
+  "const task = args[args.length - 1] || '';",
+  "if (process.env.STUB_TASK_FILE) fs.writeFileSync(process.env.STUB_TASK_FILE, task, 'utf8');",
+  "if (out) fs.writeFileSync(out, 'STUB 结果', 'utf8');",
+  "process.exit(0);",
+].join('\n'), 'utf8');
+process.env.WHALE_CODEX_BIN = stubCodex;
+
 const plugin = require('../plugin.js');
 
 const OWNER = 'wxid_owner_test';
@@ -386,6 +402,32 @@ test('解析器先失败时交给模型兜底', async () => {
   test('「交给 codex 改脚本」也触发 codex 路由', async () => {
     const first = await gen('交给 codex 把桌面那个脚本改好', { overrides: NAT });
     assert.doesNotMatch(first.output.text, /回「确认」|没听懂/);
+  });
+
+  test('codex 找内容时要求直接给出正文，而不是只贴链接', async () => {
+    const taskFile = path.join(tmp, 'codex-task.txt');
+    process.env.STUB_TASK_FILE = taskFile;
+    const out = await gen('用 codex 找《假烟假酒假朋友》毛家超版歌词', {
+      chatId: 'codex-hint-chat',
+      overrides: { prefix: '', roots: [tmp] },
+      model: async () => JSON.stringify({ action: 'codex', task: '找《假烟假酒假朋友》毛家超版歌词' }),
+    });
+    assert.match(out.output.text || '', /Codex 完成/);
+    const sent = fs.readFileSync(taskFile, 'utf8');
+    assert.match(sent, /【输出要求】/);
+    assert.match(sent, /不要只给链接/);
+    assert.match(sent, /毛家超版歌词/, '原任务要保留在提示后面');
+  });
+
+  test('codex 建文件的任务不加「给正文」要求', async () => {
+    const taskFile = path.join(tmp, 'codex-task2.txt');
+    process.env.STUB_TASK_FILE = taskFile;
+    await gen('用 codex 在桌面建个 md', {
+      chatId: 'codex-file-chat',
+      overrides: { prefix: '', roots: [tmp] },
+      model: async () => JSON.stringify({ action: 'codex', task: '在桌面创建 a.md，内容写 hello' }),
+    });
+    assert.doesNotMatch(fs.readFileSync(taskFile, 'utf8'), /【输出要求】/);
   });
 
   test('能力事实块提到 Codex 与 DSH', async () => {
