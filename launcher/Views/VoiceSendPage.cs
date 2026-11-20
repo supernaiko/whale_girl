@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using NAudio.CoreAudioApi;
 
 namespace WhaleLauncher.Views;
@@ -29,6 +30,7 @@ public sealed class VoiceSendPage : UserControl
     readonly TextBlock keyStatus=new(){TextWrapping=TextWrapping.Wrap,Visibility=Visibility.Collapsed},testStatus=new(){TextWrapping=TextWrapping.Wrap,Visibility=Visibility.Collapsed};
     readonly string root,file;
     string providerId="breezeblue";
+    readonly MediaPlayer previewPlayer=new();
     string keyFile=>SpeechProviders.KeyFile(root,providerId);
     Dictionary<string,SpeechProfile> profiles=new();
     Dictionary<string,string> modelVoices=new();
@@ -169,6 +171,23 @@ public sealed class VoiceSendPage : UserControl
         var saveRow=new WrapPanel{Margin=new Thickness(0,10,0,0)};
         var save=Button("保存语音配置",_=>{Save();return Task.CompletedTask;},null,flat:true,"Primary");
         save.Margin=new Thickness(0,0,8,0);saveRow.Children.Add(save);
+        saveRow.Children.Add(Button("试听一句话",async token=>{
+            if(testing){testStatus.Text="请等测试结束再试听";return;}
+            try
+            {
+                testStatus.Visibility=Visibility.Visible;testStatus.Text="正在合成试听语音…";
+                var p=SpeechProviders.Get(providerId);
+                string secret=string.IsNullOrWhiteSpace(key.Password)?BreezeSpeech.LoadKey(keyFile):key.Password;
+                if(string.IsNullOrWhiteSpace(secret))throw new Exception("请先配置 "+p.Name+" 的 Key（或先保存一次配置）");
+                string voiceId=voice.Text.Trim();
+                if(string.IsNullOrWhiteSpace(voiceId))throw new Exception("请先选择音色");
+                string tmp=Path.Combine(Path.GetTempPath(),"whale-voice-preview-"+Guid.NewGuid().ToString("N")+(p.Id=="breezeblue"?".mp3":".wav"));
+                await SpeechProviders.Generate(p.Id,secret,model.Text.Trim(),voiceId,"哈喽哈喽，可以听见我说话么",instructions.Text.Trim(),tmp,token);
+                previewPlayer.Stop();previewPlayer.Open(new Uri(tmp));previewPlayer.Play();
+                testStatus.Text="试听中（"+p.Name+" · "+voiceId+"），从本机扬声器播放，不发微信。";
+            }
+            catch(Exception ex){testStatus.Visibility=Visibility.Visible;testStatus.Text="试听失败："+ex.Message;}
+        },testStatus,flat:true));
         saveRow.Children.Add(Button("发送测试语音到文件传输助手",async token=>{
             if(testing){testStatus.Text="测试正在进行，请等待结果";return;}
             testing=true;
