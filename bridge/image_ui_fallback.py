@@ -197,6 +197,13 @@ def read_image_via_ui(request, log, *, timeout=CAPTURE_TIMEOUT, run=None):
         log('图片预览兜底未取到图 reason=invalid_capture')
         return b''
     log('图片预览兜底已取图（%d KB）' % (len(data) // 1024))
+    try:
+        _dbg = os.path.join(os.environ.get('TEMP') or '.', 'whale_debug_fallback.jpg')
+        with open(_dbg, 'wb') as _f:
+            _f.write(data)
+        log('兜底图已落盘：%s（%d 字节）' % (_dbg, len(data)))
+    except Exception:
+        pass
     return data
 
 

@@ -174,6 +174,35 @@ def wait_render_ready(hwnd, *, timeout=5.0, min_width=500):
     return _render_window_ready(hwnd, min_width=min_width)
 
 
+def normalize_window(hwnd, *, width=1024, height=735):
+    """把微信主窗统一成固定中等尺寸：不要最大化，也不要停在极小尺寸。
+
+    实测（用户 2026-11-22）：窗口最大化时 Qt 侧栏比例/DPI 校准会漂，
+    图片兜底截图和坐标点击错位→白屏；把窗口缩小后恢复正常。另一头，窗口刚从
+    托盘恢复时会短暂停在 160×28，消息列表根本没渲染。两种极端都归一到固定尺寸。
+    """
+    import ctypes
+    import time
+
+    import win32gui
+
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        return False
+    try:
+        if win32gui.IsZoomed(hwnd):
+            win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE
+            time.sleep(0.15)
+        rect = win32gui.GetWindowRect(hwnd)
+        w, h = rect[2] - rect[0], rect[3] - rect[1]
+        if w < 700 or h < 450:
+            # SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE：只改大小，不动位置和焦点
+            ctypes.windll.user32.SetWindowPos(hwnd, None, 0, 0, width, height, 0x0002 | 0x0004 | 0x0010)
+            time.sleep(0.2)
+        return True
+    except Exception:
+        return False
+
+
 def activate_target(hwnd):
     """发送路径恢复前台：先像人一样恢复窗口，再走上游的置顶+挂接前台线程激活。"""
     import time
@@ -183,6 +212,8 @@ def activate_target(hwnd):
     if not hwnd or not win32gui.IsWindow(hwnd):
         return False
     try:
+        # 统一成固定中等尺寸：最大化会漂校准、极小是恢复中间态，两者都会让截图兜底失准。
+        normalize_window(hwnd)
         if win32gui.IsIconic(hwnd):
             restored = False
             try:
