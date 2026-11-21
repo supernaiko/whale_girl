@@ -117,7 +117,10 @@ async function closeEpisode({ chat, chatStore, llm = null, logger = null, now = 
   try {
     const messages = episodeMessages(chat, ep);
     const speakers = speakersOf(messages);
-    const date = dateString(now);
+    // 事件日期用「最后一条 user 消息的时间」而不是 episode 关闭时间：跨午夜关闭时，
+    // 昨晚发生的事会被盖成今天的日期。没有 user 消息（纯自言自语）才退回 now。
+    const lastUserMsg = messages.filter((m) => m && m.role === 'user').slice(-1)[0];
+    const date = dateString((lastUserMsg && (lastUserMsg.ts || lastUserMsg.time)) || now);
     const allUids = speakers.map((s) => s.uid);
     const extracted = await extractor.extractEpisode({ messages, llm, speakers, logger, now });
     if (chat.deleted) return { closed: false, reason: 'deleted', episodeId: ep.id };

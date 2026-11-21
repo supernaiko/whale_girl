@@ -246,6 +246,40 @@ test('默认配置里有 care 段，且时间窗与频率字段齐全', () => {
   }
 });
 
+test('搭话生成：只有上一条是我发的搭话没回才跳过，普通回复不算', async () => {
+  const { careForChat } = require('../src/services/careChat');
+  const makeRuntime = (messages) => ({
+    config: { persona: { name: '鲸鲸', ownerName: '主人' } },
+    store: { messages: () => messages },
+    llm: { isMock: true },
+    logger: { warn() {} },
+  });
+
+  // 尾条是我的一条普通回复（对方问、我答），不是搭话 → 不该被当成「搭话还没回」跳过
+  const normalReply = [
+    { role: 'user', name: '主人', text: '在吗', msgId: 'm1', ts: 1 },
+    { role: 'assistant', name: '鲸鲸', text: '在呢，怎么了', msgId: 'reply-1', ts: 2 },
+  ];
+  const a = await careForChat(makeRuntime(normalReply), 'u1');
+  assert.equal(a.skip, undefined, '普通回复不该触发 no_reply_yet');
+  assert.ok(String(a.text).length > 0, '正常生成搭话');
+
+  // 尾条是我主动发的搭话（msgId care:...）且对方还没回 → 跳过
+  const pendingCare = [
+    { role: 'user', name: '主人', text: '忙', msgId: 'm1', ts: 1 },
+    { role: 'assistant', name: '鲸鲸', text: '在干啥呢', msgId: 'care:abc', ts: 2 },
+  ];
+  const b = await careForChat(makeRuntime(pendingCare), 'u1');
+  assert.equal(b.skip, 'no_reply_yet');
+  assert.equal(b.text, '');
+
+  // 对方刚说去睡 → 跳过（但只有对方说才算）
+  const goodnight = [{ role: 'user', name: '主人', text: '我去睡了，晚安', msgId: 'm1', ts: 1 }];
+  const c = await careForChat(makeRuntime(goodnight), 'u1');
+  assert.equal(c.skip, 'said_goodnight');
+  assert.equal(c.text, '');
+});
+
 test('桥接里接了定时器，且判断交给服务端', () => {
   const py = require('./helpers/bridge-source');
   assert.match(py, /def care_watch/);

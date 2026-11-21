@@ -84,3 +84,49 @@ test('返回不是可解析 JSON：warn「疑似截断」，不静默降级', as
   assert.ok(line.includes('不是可解析 JSON'), line);
   assert.ok(line.includes('疑似截断'), line);
 });
+
+test('多人抽取：模型漏填/填错 uid 就丢弃，绝不归给最后一个说话人', async () => {
+  // 三个人，最后说话的是 u3；模型把 u1 的事实 uid 写错成「u9」
+  const group = [
+    { role: 'user', uid: 'u1', name: '小海', text: '我要去北京上班了', id: 'msg_1' },
+    { role: 'user', uid: 'u2', name: '小树', text: '恭喜啊', id: 'msg_2' },
+    { role: 'user', uid: 'u3', name: '小湖', text: '去北京记得带伞', id: 'msg_3' },
+  ];
+  const groupSpeakers = [{ uid: 'u1', name: '小海' }, { uid: 'u2', name: '小树' }, { uid: 'u3', name: '小湖' }];
+  const llm = {
+    isMock: false,
+    async complete() {
+      return JSON.stringify({
+        summary: '在聊小海去北京',
+        facts: [{ uid: 'u9', text: '要去北京上班' }, { text: '恭喜' }],
+        events: [{ uid: 'nope', title: '去北京', summary: '小海要去北京' }],
+        traits: [],
+        threads: [],
+        relations: [],
+      });
+    },
+  };
+  const out = await extractEpisode({ messages: group, llm, speakers: groupSpeakers });
+  assert.equal(out.facts.length, 0, '非法 uid 的事实必须丢弃，不能归给 u3：' + JSON.stringify(out.facts));
+  assert.equal(out.events.length, 0, '非法 uid 的事件也要丢弃：' + JSON.stringify(out.events));
+});
+
+test('单人对聊：模型漏填 uid 可以保守回退到唯一说话人', async () => {
+  const llm = {
+    isMock: false,
+    async complete() {
+      return JSON.stringify({
+        summary: '在聊换工作',
+        facts: [{ text: '想换个环境' }],
+        traits: [],
+        events: [{ title: '换工作', summary: '小海最近在换工作' }],
+        threads: [],
+        relations: [],
+      });
+    },
+  };
+  const out = await extractEpisode({ messages, llm, speakers });
+  assert.equal(out.facts.length, 1, '单人漏填 uid 应回退到唯一说话人');
+  assert.equal(out.facts[0].uid, 'u1');
+  assert.equal(out.events[0].uid, 'u1');
+});

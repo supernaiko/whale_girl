@@ -29,12 +29,14 @@ async function careForChat(runtime, chatId) {
   const name = String(personaCfg.ownerName || '主人');
   const hour = time.hourOfDay(Date.now(), time.resolveTimeZone(runtime.config));
   let recent = [];
+  let lastMsg = null;
   if (chatId) {
     // 会话 key 可能是私聊（wechat:u:<id>）也可能是群（wechat:g:<id>），两边都试
     for (const key of [`wechat:u:${chatId}`, `wechat:g:${chatId}`, chatId]) {
       try {
         const msgs = runtime.store.messages(key, 12) || [];
         if (msgs.length) {
+          lastMsg = msgs[msgs.length - 1];
           recent = msgs
             .filter((m) => m && m.text)
             .map((m) => `${m.role === 'user' ? '对方' : (personaCfg.name || '我')}：${String(m.text).slice(0, 60)}`);
@@ -42,15 +44,19 @@ async function careForChat(runtime, chatId) {
         }
       } catch {
         recent = [];
+        lastMsg = null;
       }
     }
   }
-  // 对方刚说了要去睡 / 我已经主动过一轮还没回，就先别开口。
+  // 只有「上一条就是我主动发的搭话、对方还没回」才跳过；普通回复不算。
+  // 搭话消息由 /api/care/sent 以 msgId `care:<id>` 记账，这里只认这一种。
+  const pendingCare = !!lastMsg && lastMsg.role === 'assistant'
+    && typeof lastMsg.msgId === 'string' && lastMsg.msgId.startsWith('care:');
   const lastLine = recent.length ? recent[recent.length - 1] : '';
-  const lastIsMe = lastLine.startsWith((personaCfg.name || '我') + '：');
-  const saidGoodNight = /(去睡了|先睡了|睡了|晚安|困了|不聊了|眯一会儿)/.test(lastLine);
-  if (lastIsMe || saidGoodNight) {
-    return { ok: true, text: '', skip: lastIsMe ? 'no_reply_yet' : 'said_goodnight', mock: false, hour };
+  const lastFromUser = !!lastMsg && lastMsg.role === 'user';
+  const saidGoodNight = lastFromUser && /(去睡了|先睡了|睡了|晚安|困了|不聊了|眯一会儿)/.test(lastLine);
+  if (pendingCare || saidGoodNight) {
+    return { ok: true, text: '', skip: pendingCare ? 'no_reply_yet' : 'said_goodnight', mock: false, hour };
   }
   if (runtime.llm.isMock) {
     return { ok: true, text: care.pickTemplate(), mock: true, hour };

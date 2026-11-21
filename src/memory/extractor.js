@@ -271,10 +271,16 @@ async function extractEpisode({ messages, llm, speakers = [], logger = null, now
       if (logger) logger.warn(`episode 抽取返回不是可解析 JSON（${describeRawShape(raw)}，疑似截断）`);
       return fallback();
     }
-    // 只接受本 episode 里出现过的人；没写 uid 的按最后一个说话人归
-    const lastUid = String((users[users.length - 1] || {}).uid || '');
+    // 只接受本 episode 里出现过的人。
+    // 单人对聊时模型漏填 uid 可以保守回退到唯一说话人；多人场景 uid 缺失/非法就丢弃这条，
+    // 绝不归给「最后一个说话人」——那会把 A 说过的话记到 B 头上（记错人比漏记更糟）。
+    const distinctUids = [...new Set(users.map((m) => String(m.uid || '')).filter(Boolean))];
+    const onlyUid = distinctUids.length === 1 ? distinctUids[0] : '';
     const fix = (item) => {
-      if (!item.uid || !allowed.has(item.uid)) item.uid = lastUid;
+      if (!item.uid || !allowed.has(item.uid)) {
+        if (!onlyUid) return null;
+        item.uid = onlyUid;
+      }
       return allowed.has(item.uid) ? item : null;
     };
     parsed.facts = parsed.facts.map(fix).filter(Boolean);
