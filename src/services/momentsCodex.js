@@ -218,6 +218,8 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       mirrorLine ? mirrorLine : '',
       '',
       '风格：' + style,
+      (character && character.realism) ? ('真实感：' + character.realism) : '',
+      (character && character.negativeExtra) ? ('不要：' + character.negativeExtra) : '',
       '生活感（重要）：',
       '1) 表情和眼神每张都要不一样：可以笑、皱眉、发呆、走神、看镜头或看手里的东西，不要每张都低头垂眼、面无表情、同一个角度；',
       '2) 场景要日常真实，便利店、家里、工位、小饭馆、路边摊都行，别为了出片刻意去海边/景点，偶尔一次就好；',
