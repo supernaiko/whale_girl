@@ -231,6 +231,7 @@ function natural(raw) {
   const t = String(raw || '').replace(FILLER, '').replace(/^(那|那就|好|嗯|行)[，,\s]*/, '').replace(/[。！!？?]+$/, '').trim();
   if (!t) return null;
   if (parseFileSend(t) || /^发文件(?:\s|$)/.test(t)) return t;
+  if (SEND_ME.test(t)) return t;
   if (/^(?:电脑|助手|插件)?状态$/.test(t)) return '状态';
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
   // 「把这些记一下」「记到小本本」：她自己写进 Documents\小本本
@@ -669,7 +670,7 @@ function parseCreateArg(arg) {
   return { dir: parts[0].trim(), name: parts[1].trim(), content: parts.slice(2).join('|') };
 }
 
-async function createFile(settings, parsed) {
+async function createFile(settings, parsed, whale, chatId) {
   let name = String(parsed.name || '').trim();
   if (!name || /[\\/]/.test(name)) return '文件名不合法：' + (name || '（空）');
   const content = String(parsed.content || '');
@@ -686,6 +687,7 @@ async function createFile(settings, parsed) {
     return '已创建目录：' + target;
   }
   await fsp.writeFile(target, content, 'utf8');
+  if (whale && chatId) rememberCreated(whale, chatId, target);
   return '已创建：' + target + '（' + human(Buffer.byteLength(content, 'utf8')) + '）';
 }
 
@@ -1067,6 +1069,43 @@ function recallLast(whale, chatId, maxAgeMs) {
   }
 }
 
+// 记住最近一次建好的文件：「把文件发我」没给路径时直接用它发到当前会话
+function createdFile(whale, chatId) {
+  return path.join(whale.paths.pluginData, 'created-' + String(chatId).replace(/[^\w.-]/g, '_') + '.json');
+}
+
+function rememberCreated(whale, chatId, file) {
+  try {
+    fs.mkdirSync(whale.paths.pluginData, { recursive: true });
+    fs.writeFileSync(createdFile(whale, chatId), JSON.stringify({ path: file, at: Date.now() }), 'utf8');
+  } catch { /* 记不住就算了 */ }
+}
+
+function recallCreated(whale, chatId, maxAgeMs) {
+  try {
+    const data = JSON.parse(fs.readFileSync(createdFile(whale, chatId), 'utf8'));
+    const p = String((data && data.path) || '');
+    if (!p || !fs.existsSync(p)) return null;
+    if (Date.now() - Number((data && data.at) || 0) > (maxAgeMs || 24 * 60 * 60 * 1000)) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+// Codex 跑完常把文件路径写在回复里，顺手记下它建出来的文件
+const CREATED_PATH_RE = /[A-Za-z]:\\[^\s"'“”‘’<>|，。；：、）()\[\]【】]+/g;
+
+function rememberCreatedFromText(whale, chatId, text) {
+  const hits = String(text || '').match(CREATED_PATH_RE) || [];
+  for (let i = hits.length - 1; i >= 0; i--) {
+    const p = hits[i].replace(/[.。,]+$/, '');
+    try {
+      if (fs.statSync(p).isFile()) { rememberCreated(whale, chatId, p); return; }
+    } catch { /* 不是文件就继续往前找 */ }
+  }
+}
+
 // 最近几条主人消息的完整文本（比 rememberLast 长），「把这些记一下」没给内容时从这里翻上一大段
 function histFile(whale, chatId) {
   return path.join(whale.paths.pluginData, 'hist-' + String(chatId).replace(/[^\w.-]/g, '_') + '.json');
@@ -1137,6 +1176,8 @@ async function memoContent(whale, chatId, text, tail) {
 const SHORT_FOLLOW = /^(随便|你定|你看着办|看着办|都行|都可以|可以|行|好|嗯|对|是|就这样|你来)((吧|了|的|啊|呀|哦|你做|你来|你定|就行|听你的))*$/;
 // 接上一句命令的短话：「你听明白就做」「按这个做」——不含任务本身，要回看上一条
 const CONTINUE = /^(?:你?听明白就做|就照这个|按这个做|照着做|照做|就按这样|继续做|接着做|接着来|按刚才说的做)[。！!]*$/;
+// 「把文件发我」「刚才那个文件发给我」「我说的是你把文件发我」：文件已建好，直接发到当前会话
+const SEND_ME = /^(?:我(?:说|讲)的?是[：:,，]?\s*)?(?:你)?\s*(?:把|将)?\s*(?:这个|那个|刚才那个|刚才的|刚建的|刚建好的|刚才建的|桌面上那个)?\s*(?:文件|文档|txt|md|表格|截图|图片)?\s*(?:发给我|发我|发过来|发到我这里|发到这里|传给我|传我|给我发过来|给我发)[。！!吧]*$/;
 
 // ---------------------------------------------------------------------------
 // 命令分发
@@ -1151,6 +1192,7 @@ function helpText(settings) {
     '• 发一个[微笑] / 发个捂脸 —— 在当前微信会话发送内置表情',
     '• 读 D:\\报告\\a.md —— 读文本文件',
     '• 发文件 D:\\报告\\a.pdf 给 文件传输助手',
+    '• 把文件发我 —— 把刚建好的文件作为附件发到当前会话',
     '• 找 报告 —— 按文件名搜（可加目录）',
     '• 在桌面随便建个 md —— 新建文件，建完回你路径',
     '• 在桌面建个 xlsx，随便写点数据 —— 本地直接生成 Excel（不用 DSH）',
@@ -1211,6 +1253,17 @@ async function dispatch(ctx, settings, state) {
     return runConfirmed(ctx, settings, chatId, pending);
   }
 
+  // 「把文件发我」：没给路径，用刚建好的那个文件发到当前会话
+  if (SEND_ME.test(body)) {
+    if (message.platform !== 'wechat') return { text: '请在微信会话里发起文件发送。' };
+    const last = recallCreated(whale, chatId);
+    if (!last) return { text: '没找到刚建好的文件。可以说「发文件 <绝对路径> 给 我」，或者先让我建一个。' };
+    const checkedLast = await fileForSend(settings, last);
+    if (checkedLast.error) return { text: checkedLast.error };
+    return runConfirmed(ctx, settings, chatId, { kind: 'send-file', label: '把刚建好的文件发到这个会话',
+      at: Date.now(), file: checkedLast.file, fingerprint: checkedLast.fingerprint, target: chatId, senderId: message.senderId });
+  }
+
   const fileSend = parseFileSend(body);
   if (fileSend) {
     if (message.platform !== 'wechat') return { text: '请在微信会话里发起文件发送。' };
@@ -1220,7 +1273,7 @@ async function dispatch(ctx, settings, state) {
     const checked = await fileForSend(settings, fileSend.path);
     if (checked.error) return { text: checked.error };
     // 「发给我/发给我自己」等于发到当前会话。
-    const target = /^(我|自己|本人|主人|我本人)$/.test(fileSend.chat) ? chatId : fileSend.chat;
+    const target = /^(我|自己|本人|主人|我本人|给我|我这里|这里)$/.test(fileSend.chat) ? chatId : fileSend.chat;
     return runConfirmed(ctx, settings, chatId, { kind: 'send-file', label: '发文件给「' + fileSend.chat + '」',
       at: Date.now(), file: checked.file, fingerprint: checked.fingerprint, target, senderId: message.senderId });
   }
@@ -1268,7 +1321,7 @@ async function dispatch(ctx, settings, state) {
         return { text: '要建在哪个目录、叫什么名字？这样说：在桌面新建 测试.txt，内容：你好' };
       }
       audit(ctx.whale, { action: 'create', dir: parsed.dir, name: parsed.name, chatId });
-      return { text: await createFile(settings, parsed) };
+      return { text: await createFile(settings, parsed, whale, chatId) };
     }
 
     if (verb === 'codex' || verb === '用codex') {
@@ -1517,6 +1570,7 @@ async function runCodexJob(ctx, settings, chatId, pending) {
     jobs.delete(chatId);
     audit(whale, { action: 'codex.done', ok: quick.ok, ms: Date.now() - job.startedAt, chatId });
     appLog(whale, 'codex', (quick.ok ? 'ok ' : 'fail ') + Math.round((Date.now() - job.startedAt) / 1000) + 's ' + clip(quick.ok ? quick.text : quick.message, 400));
+    if (quick.ok) rememberCreatedFromText(whale, chatId, quick.text);
     return { text: quick.ok ? clip('Codex 完成：\n' + quick.text) : quick.message };
   }
 
@@ -1524,6 +1578,7 @@ async function runCodexJob(ctx, settings, chatId, pending) {
     jobs.delete(chatId);
     audit(whale, { action: 'codex.done', ok: done.ok, ms: Date.now() - job.startedAt, chatId });
     appLog(whale, 'codex', (done.ok ? 'ok ' : 'fail ') + Math.round((Date.now() - job.startedAt) / 1000) + 's ' + clip(done.ok ? done.text : done.message, 400));
+    if (done.ok) rememberCreatedFromText(whale, chatId, done.text);
     const body = done.ok ? clip('Codex 完成：\n' + done.text) : done.message;
     await deliver(whale, chatId, body, ctx.message.chatType);
   });
@@ -1552,7 +1607,7 @@ exports.hooks = {
       flushPending(ctx.whale, message.chatId, message.chatType).catch(() => {});
       const system = typeof ctx.system === 'string' ? ctx.system : '';
       if (!system || system.includes('【能力事实】')) return {};
-      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；以前对话里你说过「codex 我调不了」，那是旧版本的旧说法，现在插件已经支持 Codex，别再重复这句话。不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
+      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务，还能把本机文件当微信附件发出去（「发文件 <绝对路径> 给 <会话>」）。主人说「把文件发我」时，插件会把刚建好的文件直接发到当前会话——不要说「文件发不了」「只能发文字和表情」。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；以前对话里你说过「codex 我调不了」，那是旧版本的旧说法，现在插件已经支持 Codex，别再重复这句话。不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
     } catch {
       return {};
     }

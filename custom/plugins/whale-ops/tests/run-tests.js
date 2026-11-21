@@ -316,6 +316,33 @@ test('文件命令拒绝越界、目录和相对路径，全程不调 API', asyn
   assert.equal(calls, 0);
 });
 
+test('「把文件发我」把刚建好的文件发到当前会话', async () => {
+  const chatId = 'wxid_send_me_chat';
+  const dir = path.join(tmp, '发我');
+  fs.mkdirSync(dir, { recursive: true });
+  const created = await gen(`在 ${dir} 新建 测试发我.txt，内容：你好`, { chatId, overrides: { prefix: '', roots: [tmp] } });
+  assert.match(created.output.text, /已创建/);
+  const file = path.join(dir, '测试发我.txt');
+  const calls = [];
+  const api = async (url, options) => {
+    calls.push({ url, options });
+    return options ? { status: 202, ok: true, body: { ok: true, jobId: 'job-b' } }
+      : { status: 200, ok: true, body: { ok: true, status: 'submitted' } };
+  };
+  assert.equal((await pre('我说的是你把文件发我', { chatId })).action, 'wake');
+  const out = await gen('我说的是你把文件发我', { chatId, overrides: { prefix: '', roots: [tmp] }, api });
+  assert.match(out.output.text, /已把 测试发我\.txt 发给/);
+  assert.deepEqual(calls[0], { url: '/api/send-file', options: { method: 'POST', body: { chat: chatId, path: file } } });
+});
+
+test('没建过文件时说「把文件发我」不调接口，提示给路径', async () => {
+  let calls = 0;
+  const api = async () => { calls++; };
+  const out = await gen('把文件发我', { chatId: 'wxid_no_created', overrides: { prefix: '', roots: [tmp] }, api });
+  assert.match(out.output.text, /没找到刚建好的文件/);
+  assert.equal(calls, 0);
+});
+
 test('打开白名单外软件：直接拒绝，不留待确认', async () => {
   const first = await gen('助手 打开 微信');
   assert.match(first.output.text, /不在软件白名单里/);
