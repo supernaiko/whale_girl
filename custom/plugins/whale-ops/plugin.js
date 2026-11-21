@@ -1108,6 +1108,32 @@ function lastSubstantive(whale, chatId, excludeText) {
   }
 }
 
+// 从「记一下」这句话里提取真正要记的内容。正则抓到的候选可靠时直接用（快、不耗模型）；
+// 不可靠（空、纯指代、修正/否定词、太短）时交给模型从「这句话 + 上一段」里理解要记什么；
+// 模型没接住再翻上一段兜底。根治「没有哦你重新记一下」被当成「没有哦你重新」记进去的问题。
+async function memoContent(whale, chatId, text, tail) {
+  const t = String(tail || '').trim();
+  const junkWord = /没有|不是|不对|算了|重新|再|补充|更正|这些|那些|这个|那个|它|它们|网站|东西|记一下|记在哪|小本本/;
+  if (t && !junkWord.test(t) && t.length > 6) return t;
+  if (typeof whale.model === 'function') {
+    const prev = lastSubstantive(whale, chatId, text);
+    const system = '你是小本本记录助手。用户想让鲸鲸把东西记进小本本。从用户这句话里提取真正要记的内容，只输出 JSON：{"text":"要记的内容"}；没有具体内容就 {"text":""}。不要解释、不要 markdown；「记一下/记在哪/重新记/分类」这类是指令，不是内容，别把它们当成要记的东西。';
+    const turn = '用户刚发：「' + text + '」' + (prev ? '\n他上一段发过的、很可能就是要记的内容：「' + clip(prev, 2000) + '」' : '');
+    try {
+      const out = await whale.model({ system, turns: [{ role: 'user', content: turn }], maxTokens: 400 });
+      const raw = typeof out === 'string' ? out : (out && (out.text || out.content)) || '';
+      const m = String(raw).match(/\{[\s\S]*\}/);
+      if (m) {
+        const j = JSON.parse(m[0]);
+        if (j && j.text && String(j.text).trim()) return String(j.text).trim();
+      }
+    } catch { /* 模型没接住就翻上一段 */ }
+  }
+  const prev = lastSubstantive(whale, chatId, text);
+  if (prev) return prev;
+  return t || null;
+}
+
 const SHORT_FOLLOW = /^(随便|你定|你看着办|看着办|都行|都可以|可以|行|好|嗯|对|是|就这样|你来)((吧|了|的|啊|呀|哦|你做|你来|你定|就行|听你的))*$/;
 // 接上一句命令的短话：「你听明白就做」「按这个做」——不含任务本身，要回看上一条
 const CONTINUE = /^(?:你?听明白就做|就照这个|按这个做|照着做|照做|就按这样|继续做|接着做|接着来|按刚才说的做)[。！!]*$/;
@@ -1214,11 +1240,8 @@ async function dispatch(ctx, settings, state) {
   }
   const memoHit = body.match(/^记一下\s*([\s\S]*)$/);
   if (memoHit) {
-    let content = String(memoHit[1] || '').trim();
-    if (!content) {
-      content = lastSubstantive(whale, chatId, message.text);
-      if (!content) return { text: '要记什么？把内容发给我（比如「记一下：我的生日是 X 月 X 日」），或者先发要记的东西、再跟我说「把这些记一下」，我写进小本本。' };
-    }
+    const content = await memoContent(whale, chatId, message.text, memoHit[1]);
+    if (!content) return { text: '要记什么？把内容发给我（比如「记一下：我的生日是 X 月 X 日」），或者先发要记的东西、再跟我说「把这些记一下」，我写进小本本。' };
     return { text: await rememberText(settings, content) };
   }
   const recallHit = body.match(/^回忆\s*([\s\S]*)$/);

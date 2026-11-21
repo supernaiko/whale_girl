@@ -174,6 +174,26 @@ test('「记一下并且分类好」交给 codex 分类，不本地直接写', a
   assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '走 codex 不该本地直接写');
 });
 
+test('「没有哦你重新记一下」交给模型理解，不把「没有哦你重新」当内容', async () => {
+  const memo = path.join(tmp, '小本本重记');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-redo-chat';
+  await pre('十个视频工具：HyperFrames 做动效视频；video-use 剪视频。', { chatId, overrides });
+  const out = await gen('没有哦你重新记一下', {
+    chatId, overrides,
+    model: async ({ turns }) => {
+      const joined = turns.map(x => x.content).join('\n');
+      assert.match(joined, /重新记一下/);
+      assert.match(joined, /HyperFrames/);
+      return JSON.stringify({ text: '十个视频工具：HyperFrames 做动效视频；video-use 剪视频。' });
+    },
+  });
+  assert.match(out.output.text || '', /记好了/);
+  const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
+  assert.ok(written.includes('HyperFrames'), '应记模型返回的内容');
+  assert.ok(!written.includes('没有哦你重新'), '不该把修正词当内容');
+});
+
 test('自己干不了的电脑活儿（剪辑/下载）整句丢给 codex', async () => {
   const overrides = { prefix: '', roots: [tmp] };
   const taskFile = path.join(tmp, 'codex-task-fallback.txt');
