@@ -763,6 +763,7 @@ def apply(verbose: bool = True) -> bool:
     cls._session_list = _session_list
     cls._session_rows_of = _session_rows_of
     cls.ensure_chat_page = ensure_chat_page
+    cls._chat_page_visible = _chat_page_visible
     # 方便单独测「这句话该点哪一行」，不碰任何窗口
     cls._row_score = staticmethod(_row_score)
     cls._name_tokens = staticmethod(_name_tokens)

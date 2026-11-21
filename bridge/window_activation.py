@@ -175,12 +175,12 @@ def wait_render_ready(hwnd, *, timeout=5.0, min_width=500):
 
 
 def normalize_window(hwnd, *, width=1024, height=735):
-    """只在必要时把窗口恢复成普通大小，绝不主动改尺寸。
+    """只在窗口缩到托盘/最小化时把它唤回普通窗口，其余一律不碰。
 
-    实测（2026-11-22）：用 SetWindowPos/SW_MAXIMIZE 去改微信 4.x 的顶层窗口，
-    会让它丢掉渲染子窗口（MMUIRenderSubWindow 消失、整窗只剩一片灰），也就是白屏。
-    所以这里只做一件事：最大化或最小化时用 SW_RESTORE 回到普通窗口，
-    尺寸交给微信自己决定。width/height 仅为兼容旧调用保留。
+    实测（2026-11-22）：对微信 4.x 的顶层窗口做 SetWindowPos/SW_MAXIMIZE/SW_RESTORE
+    都会把它弄成坏状态（渲染子窗口消失、整窗灰白、会话列表读成内部 id）。
+    所以这里**只**处理「最小化在托盘」这一种需要恢复的情况，最大化、普通尺寸、
+    窄窗口都不再改——尺寸和状态交给微信自己。
     """
     import time
 
@@ -189,10 +189,8 @@ def normalize_window(hwnd, *, width=1024, height=735):
     if not hwnd or not win32gui.IsWindow(hwnd):
         return False
     try:
-        placement = win32gui.GetWindowPlacement(hwnd)
-        show_cmd = placement[1] if len(placement) > 1 else 1
-        if win32gui.IsIconic(hwnd) or show_cmd in (2, 3):  # 最小化 / 最大化
-            win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE：回到上次的普通尺寸
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, 9)  # SW_RESTORE：从托盘唤回
             time.sleep(0.2)
         return True
     except Exception:
