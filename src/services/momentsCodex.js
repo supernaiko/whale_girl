@@ -176,6 +176,12 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     const handsLine = character && character.hands ? ('手部：' + character.hands + '。') : '';
     const jewelryLine = character && character.jewelry ? ('首饰：' + character.jewelry + '。') : '';
 
+    // 街景：普通小城市/县城街道的真实感，别拍成网红街、旅游宣传照。
+    let streetLine = '';
+    if (character && character.street && /街|路|巷|夜市|路边|摊|地铁口|商场外|县城|城中村|小区门|市场|广场|下雨|雨天/.test(text)) {
+      streetLine = '街景真实感（重要）：' + character.street + '；主角只是走在这条街上的普通人，随手拍或者被朋友顺手拍到，不摆拍、不看镜头。';
+    }
+
     const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
     let mode = view;
     if (!mode || mode === 'auto') {
@@ -216,6 +222,7 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     '不要拍和这句话无关的日常，也不要拍成素材图。',
       viewRule ? ('拍照方式（重要）：' + viewRule) : '',
       mirrorLine ? mirrorLine : '',
+      streetLine ? streetLine : '',
       '',
       '风格：' + style,
       (character && character.realism) ? ('真实感：' + character.realism) : '',
@@ -242,6 +249,9 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       '完成后只回复一句话：已保存。'
     ].join('\n');
     const started = Date.now();
+    if (process.env.WHALE_IMG_PROMPT_FILE) {
+      try { fs.writeFileSync(process.env.WHALE_IMG_PROMPT_FILE, prompt); } catch { /* ignore */ }
+    }
     let raw = '';
     const extra = [];
     for (const f of refList.slice(0, 5)) extra.push('-i', f);
