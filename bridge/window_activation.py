@@ -133,12 +133,16 @@ def activate_target(hwnd):
         return False
     try:
         if win32gui.IsIconic(hwnd):
+            restored = False
             try:
                 from targeting import _restore_from_taskbar
             except Exception:
-                return False
-            if not _restore_from_taskbar():
-                return False
+                _restore_from_taskbar = None
+            if _restore_from_taskbar:
+                restored = bool(_restore_from_taskbar())
+            if not restored:
+                # 微信收到托盘后任务栏按钮可能不在 Shell_TrayWnd 里，直接 SW_RESTORE 兜底。
+                win32gui.ShowWindowAsync(hwnd, 9)
             for _ in range(10):
                 if not win32gui.IsIconic(hwnd):
                     break

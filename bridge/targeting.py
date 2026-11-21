@@ -180,15 +180,21 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
 
     hwnd = int(runtime.ACCOUNT.get('hwnd') or 0) or runtime.find_weixin_hwnd()
     if not hwnd:
+        if log:
+            log('[target] fail=no_hwnd account_hwnd=%r' % runtime.ACCOUNT.get('hwnd'))
         raise TargetUnavailable()
     for round_no in (1, 2, 3):
         if not gate():
+            if log:
+                log('[target] round=%d fail=gate_closed' % round_no)
             raise TargetUnavailable()
         # 1) 前台
         if win32gui.GetForegroundWindow() != hwnd:
             if not activate_target(hwnd):
                 _dismiss_popup(hwnd)
                 if not activate_target(hwnd):
+                    if log:
+                        log('[target] round=%d fail=activate fg=%r' % (round_no, win32gui.GetForegroundWindow()))
                     raise TargetUnavailable()
             for _ in range(12):
                 if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
@@ -196,12 +202,18 @@ def locate_and_activate(runtime, shown, aliases, *, gate, account_valid=None,
                 time.sleep(0.15)
         _dismiss_popup(hwnd)
         if account_valid is not None and not account_valid(hwnd):
+            if log:
+                log('[target] round=%d fail=account_invalid' % round_no)
             raise TargetUnavailable()
         gui = runtime.gui
         if gui is None or not gui.use_window(hwnd):
+            if log:
+                log('[target] round=%d fail=use_window gui=%r' % (round_no, gui))
             raise TargetUnavailable()
         uia = gui._get_uia(refresh=round_no > 1)
         if uia is None:
+            if log:
+                log('[target] round=%d fail=uia_none' % round_no)
             raise TargetUnavailable()
         current_aliases = set(refresh_aliases() if refresh_aliases else aliases)
         cur = None
