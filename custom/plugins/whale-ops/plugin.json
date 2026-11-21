@@ -2,7 +2,7 @@
   "Id": "whale-ops",
   "Name": "电脑助手",
   "Author": "本地插件",
-  "Version": "1.4.11",
+  "Version": "1.4.12",
   "MinAppVersion": "4.1.2",
   "Description": "让鲸鲸用自然语言读本机文件、建文件、启动软件，也能把任务交给 Codex 跑完再回你。只认主人 wxid，路径、软件都走白名单。",
   "ResultLabel": "结果",

@@ -222,6 +222,11 @@ function parseFileSend(text) {
   return { path: input.trim(), chat };
 }
 
+// 「把这些记一下」「记到小本本」：她自己写进 Documents\小本本
+const MEMO_VERB = /(记一下|记下来|记住|记到小本本|记进小本本|写进小本本|存到小本本|放进小本本|记在小本本|记着)/;
+// 自己干不了的电脑活儿，整句丢给 codex
+const CODEX_FALLBACK_VERB = /(剪辑|剪视频|下载|安装|配置|部署|处理|转换|转码|生成|分析|总结|爬虫|爬取|采集|翻译|压缩|解压|合并|拼接|渲染|做视频|做图|写脚本|写程序|写代码|跑脚本|批量|自动化|整理一下|导出)/;
+
 function natural(raw) {
   const t = String(raw || '').replace(FILLER, '').replace(/^(那|那就|好|嗯|行)[，,\s]*/, '').replace(/[。！!？?]+$/, '').trim();
   if (!t) return null;
@@ -229,16 +234,23 @@ function natural(raw) {
   if (/^(?:电脑|助手|插件)?状态$/.test(t)) return '状态';
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
   // 「把这些记一下」「记到小本本」：她自己写进 Documents\小本本
-  const MEMO_VERB = /(记一下|记下来|记住|记到小本本|记进小本本|写进小本本|存到小本本|放进小本本|记在小本本|记着)/;
   const memoHit = t.match(MEMO_VERB);
   if (memoHit) {
+    // 剥掉「我是让你把这些网站」「让你把这个」这类主语，留下真正要记的对象
     const before = t.slice(0, memoHit.index)
-      .replace(/^(?:你|帮我|麻烦你?|请)?\s*(?:把|将)?\s*/, '').replace(/[：:，,、\s]+$/, '').trim();
-    const after = t.slice(memoHit.index + memoHit[0].length).replace(/^[：:，,、\s]+/, '').trim();
+      .replace(/^(?:我(?:是)?让你|让你|请你|你|帮我|麻烦你?|请)?\s*(?:把|将)?\s*/, '')
+      .replace(/[：:，,、\s]+$/, '').trim();
+    // 「记在小本本里」「记一下并且分类好」里，跟在后面的常是方位词/分类要求，不是内容本身
+    let after = t.slice(memoHit.index + memoHit[0].length)
+      .replace(/^[：:，,、\s]+/, '')
+      .replace(/(?:里|中|内)$/, '')
+      .trim();
+    if (after && /^(?:并且|然后|顺便)?\s*(?:分个?类|归个?类|整理(?:一下|下)?|分类|归类)[了]?$/.test(after)) after = '';
     const content = after || before;
-    const filler = /^(这些|那些|这个|那个|它|它们|我|你|他|她|这|那)$/;
+    // 纯指代（这些/那个/网站…）或只有「记一下」没内容：交给 dispatch 去翻上一大段
+    const filler = /^(这些|那些|这个|那个|它|它们|我|你|他|她|这|那|这些网站|网站|这个网站|这些东西|那些东西)$/;
     if (content && !filler.test(content)) return '记一下 ' + content;
-    if (!content || filler.test(content)) return '记一下';
+    return '记一下';
   }
   if (/(?:小本本(?:里|中)?(?:记(?:了|着)?(?:什么|啥|哪些)|有(?:什么|啥|哪些))|(?:之前|以前)让你记的|我让你记的|你记得我让你记)/.test(t)) return '回忆 ' + t;
   // 「用 codex 在桌面建个 md」「使用 codex 让他…」：动词后面必须跟得上具体任务才接，
@@ -307,6 +319,10 @@ function natural(raw) {
     return '看看 ' + (pathHit || rest.replace(/^(列一下|列出|看看|看下|查看)\s*/, '').replace(/(里面|里)?(有什么|有哪些)[？?]?$/, '').trim());
   }
   if (pathHit) return '看看 ' + pathHit;
+  // 电脑上的活儿它自己干不了（剪辑/下载/装东西/跑脚本…），整句丢给 codex
+  if (CODEX_FALLBACK_VERB.test(t) && !/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否|什么是|多少钱|收费|免费)/.test(t) && t.length <= 200) {
+    return 'codex ' + t;
+  }
   return null;
 }
 
@@ -1048,6 +1064,47 @@ function recallLast(whale, chatId, maxAgeMs) {
   }
 }
 
+// 最近几条主人消息的完整文本（比 rememberLast 长），「把这些记一下」没给内容时从这里翻上一大段
+function histFile(whale, chatId) {
+  return path.join(whale.paths.pluginData, 'hist-' + String(chatId).replace(/[^\w.-]/g, '_') + '.json');
+}
+
+function rememberHist(whale, chatId, text) {
+  try {
+    const f = histFile(whale, chatId);
+    let arr = [];
+    try { arr = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { /* 首次 */ }
+    if (!Array.isArray(arr)) arr = [];
+    const t = String(text || '').trim();
+    if (!t) return;
+    arr = arr.filter(x => x && typeof x.text === 'string');
+    arr.push({ text: t.slice(0, 6000), at: Date.now() });
+    if (arr.length > 10) arr = arr.slice(-10);
+    fs.mkdirSync(whale.paths.pluginData, { recursive: true });
+    fs.writeFileSync(f, JSON.stringify(arr), 'utf8');
+  } catch { /* 记不住就算了 */ }
+}
+
+// 翻出最近一条「真正有内容」的主人消息（不是「记一下」这种指代指令），供 memo 兜底
+function lastSubstantive(whale, chatId, excludeText) {
+  try {
+    let arr = [];
+    try { arr = JSON.parse(fs.readFileSync(histFile(whale, chatId), 'utf8')); } catch { /* 无 */ }
+    if (!Array.isArray(arr)) return null;
+    const ex = String(excludeText || '').trim();
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const t = String(arr[i] && arr[i].text || '').trim();
+      if (!t || t.length <= 20) continue;
+      if (ex && t === ex) continue;
+      if (MEMO_VERB.test(t) && /^(这些|那些|这个|那个|它|它们|网站)/.test(t)) continue;
+      return t;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const SHORT_FOLLOW = /^(随便|你定|你看着办|看着办|都行|都可以|可以|行|好|嗯|对|是|就这样|你来)((吧|了|的|啊|呀|哦|你做|你来|你定|就行|听你的))*$/;
 // 接上一句命令的短话：「你听明白就做」「按这个做」——不含任务本身，要回看上一条
 const CONTINUE = /^(?:你?听明白就做|就照这个|按这个做|照着做|照做|就按这样|继续做|接着做|接着来|按刚才说的做)[。！!]*$/;
@@ -1141,7 +1198,14 @@ async function dispatch(ctx, settings, state) {
   if (/^发文件(?:\s|$)/.test(body)) return { text: '这样说：发文件 D:\\报告\\a.pdf 给 文件传输助手。' };
 
   const memoHit = body.match(/^记一下\s*([\s\S]*)$/);
-  if (memoHit) return { text: await rememberText(settings, memoHit[1]) };
+  if (memoHit) {
+    let content = String(memoHit[1] || '').trim();
+    if (!content) {
+      content = lastSubstantive(whale, chatId, message.text);
+      if (!content) return { text: '要记什么？把内容发给我（比如「记一下：我的生日是 X 月 X 日」），或者先发要记的东西、再跟我说「把这些记一下」，我写进小本本。' };
+    }
+    return { text: await rememberText(settings, content) };
+  }
   const recallHit = body.match(/^回忆\s*([\s\S]*)$/);
   if (recallHit) return { text: await recallMemo(settings, recallHit[1]) };
 
@@ -1464,6 +1528,7 @@ exports.hooks = {
       const text = String(message.text || '');
       if (emoticonCommand(settings, text)) return { action: message.platform === 'wechat' ? 'wake' : 'pass' };
       const chatId = String(message.chatId || '');
+      rememberHist(ctx.whale, chatId, text);
       const body = bodyOf(settings, text);
       const state = plain(ctx.state) ? ctx.state : {};
       const confirm = isConfirmWord(text.trim()) && Boolean(state.pending);

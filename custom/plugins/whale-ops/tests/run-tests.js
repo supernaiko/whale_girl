@@ -146,6 +146,29 @@ test('日常说「把这些记一下」会写进小本本，问的时候能翻�
   assert.match(again.output.text || '', /周六去看展/);
 });
 
+test('「我是让你把这些网站记在小本本里」不会再写成单个「里」', async () => {
+  const memo = path.join(tmp, '小本本2');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-ref-chat';
+  // 先发一大段要记的内容，再发一句指代「把这些记一下」——插件要回翻上一段
+  await pre('GitHub Skills 十条：HyperFrames 生成动效视频；video-use 剪视频；Remotion 批量做视频；ffmpeg 万能剪辑；agent-caption 自动字幕。', { chatId, overrides });
+  const out = await gen('我是让你把这些网站记在小本本里', { chatId, overrides });
+  assert.match(out.output.text || '', /记好了/);
+  const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
+  assert.ok(written.includes('HyperFrames'), '应把上一段内容记进去');
+  assert.ok(!/^\s*-\s*[^ ]*里\s*$/.test(written), '不该只记一个「里」');
+});
+
+test('自己干不了的电脑活儿（剪辑/下载）整句丢给 codex', async () => {
+  const overrides = { prefix: '', roots: [tmp] };
+  const taskFile = path.join(tmp, 'codex-task-fallback.txt');
+  process.env.STUB_TASK_FILE = taskFile;
+  const out = await gen('帮我剪辑这段视频，把开头剪掉三秒', { chatId: 'codex-fallback-chat', overrides });
+  assert.doesNotMatch(out.output.text || '', /没听懂|回「确认」/);
+  const stub = fs.readFileSync(taskFile, 'utf8');
+  assert.match(stub, /剪掉三秒|剪辑/);
+});
+
 // ---- 触发与作用域 ----
 
 test('普通聊天不抢话：pre_reply 返回 pass', async () => {
