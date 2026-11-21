@@ -61,7 +61,7 @@ MASTER_DLL_PATTERN = bytes.fromhex(
 )
 MASTER_DLL_VERIFY = (b"488944242048b8", b"488944242848b8", b"488944243048b8")
 CFG_LANDMARK = b"global_config"   # cfg 对象地标字符串(SSO 内联)
-CFG_PTR_BACK = 0x138              # 地标前指针链回退偏移(版本敏感: 4.1.10.31=0x130)
+CFG_PTR_BACK = 0x130              # 地标前指针链回退偏移(版本敏感: 4.1.10.31=0x130)
 CFG_OFFSET = 0x68                 # v18 → cfg 指针偏移(版本敏感)
 CFG_DWORD_OFF = 0x40              # cfgDword(图片密钥派生源)
 CFG_WXID_OFF = 0x48               # wxId std::string
