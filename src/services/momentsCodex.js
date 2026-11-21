@@ -183,6 +183,12 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       else if (/自拍|对着镜头|正脸|脸/.test(text)) mode = 'selfie';
       else mode = 'firstPerson';   // 默认手机在自己手里拍眼前，只有明确“自拍/对着镜头”才走 selfie
     }
+    // 用户偏好：对镜自拍更真实、看着舒服，约三成成品走对镜自拍。
+    const mirror = mode !== 'thirdPerson' && Math.random() < 0.32;
+    if (mirror) mode = 'selfie';
+    const mirrorLine = mirror
+      ? '这张拍成对镜自拍：她站在镜子前（洗手台镜、穿衣镜或电梯镜都行），手机举在胸前入镜、挡住脸或露半张脸，镜子里能看到身后的房间/墙/灯，自然的日常抓拍，不要摆拍。'
+      : '';
     const viewRule = (character && character.viewRules && character.viewRules[mode]) || '';
     let personLine = '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who;
     if (mode === 'firstPerson' && !frontView) {
@@ -209,6 +215,7 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
     '如果这句话是在抱怨/说感受（比如「怎么都不发语音了」「好累」「不想上班」），就拍与之直接对应的画面：抱怨没语音就拍低头看手机、屏幕上一条语音；说累就拍摊在椅子上、鞋没脱；不要随便拍一顿饭应付。',
     '不要拍和这句话无关的日常，也不要拍成素材图。',
       viewRule ? ('拍照方式（重要）：' + viewRule) : '',
+      mirrorLine ? mirrorLine : '',
       '',
       '风格：' + style,
       '生活感（重要）：',
@@ -218,6 +225,7 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
       '4) 不是每张都要露脸：做指甲、拍吃的东西、拍物件、拍窗外、拍手/脚这类场景，用第一人称局部特写、画面里不出现脸，更真实；只有自拍、对镜、出去玩拍全身才露脸；',
       '5) 文字要么清晰可读、要么别出现：书页、屏幕、招牌、菜单、包装上的字，场景需要时就在画面里写出简短、真实、清晰可读的文字（比如书封上的书名、菜单上一两个菜名）；写不出可读的字，就用虚化、遮挡、只拍局部或不拍正面避开，绝不生成乱码或写错的字；书不要拍内页正文——一整页密字做不出来、只摆几行会显得假，书只拍封面、合上的书、书脊或叠放的样子；宁可画面里少一个物件，也不要给一个假的；',
       (character && character.candid ? ('6) ' + character.candid) : ''),
+      '7) 不要固定姿势：别每张都「手摸窗帘看窗外」「举手挡阳光」「托腮看镜头」「手撑桌子」，姿势和构图换着来，像随手拍的；',
       '要求：',
       '1) 竖构图或方构图都可以，像手机相册里的照片；',
       frontView

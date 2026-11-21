@@ -109,6 +109,7 @@ function readSettings(raw) {
     prefix: str(input.prefix, ''),
     owners: strList(input.owners, []),
     roots: strList(input.roots, defaultRoots()).map(item => path.resolve(item)),
+    memoDir: str(input.memoDir, ''),
     allowedGroups: strList(input.allowedGroups, []),
     apps: plain(input.apps)
       ? Object.fromEntries(Object.entries(input.apps).filter(([, v]) => typeof v === 'string' && v.trim()))
@@ -227,6 +228,19 @@ function natural(raw) {
   if (parseFileSend(t) || /^发文件(?:\s|$)/.test(t)) return t;
   if (/^(?:电脑|助手|插件)?状态$/.test(t)) return '状态';
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
+  // 「把这些记一下」「记到小本本」：她自己写进 Documents\小本本
+  const MEMO_VERB = /(记一下|记下来|记住|记到小本本|记进小本本|写进小本本|存到小本本|放进小本本|记在小本本|记着)/;
+  const memoHit = t.match(MEMO_VERB);
+  if (memoHit) {
+    const before = t.slice(0, memoHit.index)
+      .replace(/^(?:你|帮我|麻烦你?|请)?\s*(?:把|将)?\s*/, '').replace(/[：:，,、\s]+$/, '').trim();
+    const after = t.slice(memoHit.index + memoHit[0].length).replace(/^[：:，,、\s]+/, '').trim();
+    const content = after || before;
+    const filler = /^(这些|那些|这个|那个|它|它们|我|你|他|她|这|那)$/;
+    if (content && !filler.test(content)) return '记一下 ' + content;
+    if (!content || filler.test(content)) return '记一下';
+  }
+  if (/(?:小本本(?:里|中)?(?:记(?:了|着)?(?:什么|啥|哪些)|有(?:什么|啥|哪些))|(?:之前|以前)让你记的|我让你记的|你记得我让你记)/.test(t)) return '回忆 ' + t;
   // 「用 codex 在桌面建个 md」「使用 codex 让他…」：动词后面必须跟得上具体任务才接，
   // 免得把「用 codex 要不要钱」这类提问也抢过来。
   const codexAsk = t.match(/^(?:看看|看下|试试|试一下|帮我|麻烦你?)?\s*(?:能不能|能否|可不可以|可以)?\s*(?:用|使用|让|交给)\s*codex\s*([\s\S]*)$/i);
@@ -301,9 +315,10 @@ function parseCreate(t) {
   if (!m) return null;
   const name = (m[2] || '').trim();
   const content = m[3] || '';
+  const dir = m[1].trim().replace(/(?:里面|里边|里|中)$/, '');
   // 名字没有扩展名又没有内容：多半是「建个文件夹」或指代不清，交给模型判断
   if (!name || (!/\.[A-Za-z0-9]{1,8}$/.test(name) && !content.trim())) return null;
-  return { dir: m[1].trim(), name, content };
+  return { dir, name, content };
 }
 
 function bodyOf(settings, text) {
@@ -409,7 +424,10 @@ function relatedToComputer(text) {
 
 function looksLikeAction(text) {
   const t = String(text || '').trim();
-  if (!t || t.length > 200) return false;
+  if (!t) return false;
+  // 记东西不限长度（可能一次贴一大段），先认这个再按长度拦
+  if (/(记一下|记下来|记住|记着|小本本)/.test(t) && !/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否)/.test(t)) return true;
+  if (t.length > 200) return false;
   if (/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否)/.test(t)) return false;
   // 句首就是动作词
   // 讨价还价/试探（「看看能不能…」「你能帮我…吗」）不接
@@ -650,6 +668,52 @@ async function createFile(settings, parsed) {
   }
   await fsp.writeFile(target, content, 'utf8');
   return '已创建：' + target + '（' + human(Buffer.byteLength(content, 'utf8')) + '）';
+}
+
+// ---------------------------------------------------------------------------
+// 小本本：日常一句话「把这些记一下」就写进 Documents\小本本，问的时候能翻出来
+// ---------------------------------------------------------------------------
+
+function memoFolder() {
+  return path.join(os.homedir(), 'Documents', '小本本');
+}
+
+function memoFolder(settings) {
+  const custom = settings && settings.memoDir ? String(settings.memoDir) : '';
+  return custom || path.join(os.homedir(), 'Documents', '小本本');
+}
+
+async function rememberText(settings, content) {
+  const text = String(content || '').trim();
+  if (!text) return '要记什么？把内容说给我，我写进小本本。';
+  const dir = await resolveSafe(settings, memoFolder(settings), { allowMissing: true });
+  if (!dir) return '小本本不在允许的目录里，建不了：' + memoFolder(settings);
+  try {
+    await fsp.mkdir(dir, { recursive: true });
+    const file = path.join(dir, '小本本.md');
+    const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
+    await fsp.appendFile(file, '- ' + stamp + ' ' + text.replace(/\r?\n/g, ' ') + '\n', 'utf8');
+    return '记好了，写进 ' + file + ' 了。（' + text.length + ' 字）';
+  } catch (error) {
+    return '写小本本失败：' + error.message;
+  }
+}
+
+async function recallMemo(settings, query) {
+  const file = path.join(memoFolder(settings), '小本本.md');
+  let lines = [];
+  try {
+    lines = (await fsp.readFile(file, 'utf8')).split(/\r?\n/).filter(line => line.trim().startsWith('-'));
+  } catch { /* 还没记过 */ }
+  if (!lines.length) return '小本本还是空的，还没记过东西。';
+  const words = String(query || '').replace(/^回忆\s*/, '').split(/[\s，,。！？!?]+/)
+    .filter(word => word.length > 1 && !/(小本本|之前|让你|记的|记得|什么|哪些|东西|事情|里边?)/.test(word));
+  let hits = lines;
+  if (words.length) {
+    const matched = lines.filter(line => words.some(word => line.includes(word)));
+    if (matched.length) hits = matched;
+  }
+  return '小本本里记着这些：\n' + hits.slice(-8).map(line => line.replace(/^-\s*/, '')).join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1139,11 @@ async function dispatch(ctx, settings, state) {
       at: Date.now(), file: checked.file, fingerprint: checked.fingerprint, target, senderId: message.senderId });
   }
   if (/^发文件(?:\s|$)/.test(body)) return { text: '这样说：发文件 D:\\报告\\a.pdf 给 文件传输助手。' };
+
+  const memoHit = body.match(/^记一下\s*([\s\S]*)$/);
+  if (memoHit) return { text: await rememberText(settings, memoHit[1]) };
+  const recallHit = body.match(/^回忆\s*([\s\S]*)$/);
+  if (recallHit) return { text: await recallMemo(settings, recallHit[1]) };
 
   const match = body.match(COMMAND);
   if (!match) return { text: '没听懂。发「帮助」看看能做什么。' };

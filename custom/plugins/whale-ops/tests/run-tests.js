@@ -136,6 +136,16 @@ test('新建一个还不存在的目录（如 小本本）不再报路径不存�
   assert.strictEqual(fs.readFileSync(path.join(tmp, '小本本', 'notes.md'), 'utf8'), 'hello');
 });
 
+test('日常说「把这些记一下」会写进小本本，问的时候能翻出来', async () => {
+  const memo = path.join(tmp, '小本本');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const out = await gen('把这些记一下：周六去看展，门票在邮箱里', { chatId: 'memo-chat', overrides });
+  assert.match(out.output.text || '', /记好了/);
+  assert.ok(fs.readFileSync(path.join(memo, '小本本.md'), 'utf8').includes('周六去看展'));
+  const again = await gen('小本本里记了什么', { chatId: 'memo-chat', overrides });
+  assert.match(again.output.text || '', /周六去看展/);
+});
+
 // ---- 触发与作用域 ----
 
 test('普通聊天不抢话：pre_reply 返回 pass', async () => {
