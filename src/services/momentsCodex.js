@@ -123,6 +123,124 @@ function choose(input = {}) {
 }
 
 
+function buildImagePrompt({ scene, character, outFile, frontView = false, view = 'auto', references = null }) {
+  const refList = Array.isArray(references) ? references.filter(f => f && fs.existsSync(f)) : [];
+  const text = String(scene || '');
+  const who = character && character.look ? character.look : '一个二十多岁的女生，长发，身材偏瘦，日常穿宽松卫衣和牛仔裤';
+  const optional = character && character.optional ? character.optional : '';
+  let outfit = '';
+  let hairstyle = '';
+  let accessory = '';
+  if (character) {
+    const byScene = character.wardrobeByScene || {};
+    const pick = (list) => (Array.isArray(list) && list.length ? list[Math.floor(Math.random() * list.length)] : '');
+    const key = /睡衣|床上|居家|沙发|家里|房间/.test(text) ? 'home'
+      : /海边|沙滩|海风/.test(text) ? 'beach'
+      : /夜市|晚上|夜里|街边/.test(text) ? 'night'
+      : /公司|上班|开会|加班/.test(text) ? 'work'
+      : /下雨|雨天/.test(text) ? 'rain'
+      : /吃饭|面|火锅|外卖|咖啡|奶茶/.test(text) ? 'meal'
+      : 'street';
+    outfit = pick(byScene[key]) || pick(character.wardrobe) || '';
+    hairstyle = pick(character.hairstyles);
+    accessory = pick(character.accessories);
+  }
+
+  // 她拥有的电子设备固定，按场景选用；画面里出现设备只能是这些，别画出别的品牌。
+  let deviceLine = '';
+  if (character && character.devices) {
+    const dev = character.devices;
+    const device = /工作|代码|程序|写|改|调|bug|需求|电脑|笔记本|Mac|上线|部署|敲键盘/.test(text) ? dev.laptop
+      : /剧|漫画|番|平板|床上|沙发|躺着|追|刷剧|看片/.test(text) ? dev.tablet
+      : dev.phone;
+    deviceLine = '画面里出现的电子设备只能是她自己的：' + (device || dev.phone) + '。' + (dev.rule || '');
+  }
+
+  // 美甲场景：她做的是长款网红甲，不是短圆自然甲。
+  let nailsLine = '';
+  if (character && character.nails && /美甲|指甲|做指甲|甲油/.test(text)) {
+    nailsLine = '这次的美甲：' + character.nails + '。';
+  }
+
+  // 手部与首饰的固定风格，出图时保持一致。
+  const handsLine = character && character.hands ? ('手部：' + character.hands + '。') : '';
+  const jewelryLine = character && character.jewelry ? ('首饰：' + character.jewelry + '。') : '';
+
+  // 街景：普通小城市/县城街道的真实感，别拍成网红街、旅游宣传照。
+  let streetLine = '';
+  if (character && character.street && /街|路|巷|夜市|路边|摊|地铁口|商场外|县城|城中村|小区门|市场|广场|下雨|雨天/.test(text)) {
+    streetLine = '街景真实感（重要）：' + character.street + '；主角只是走在这条街上的普通人，随手拍或者被朋友顺手拍到，不摆拍、不看镜头。';
+  }
+
+  const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
+  let mode = view;
+  if (!mode || mode === 'auto') {
+    if (/出去玩|旅行|景点|海边|爬山|逛街|打卡|拍照/.test(text)) mode = 'thirdPerson';
+    else if (/自拍|对着镜头|正脸|脸/.test(text)) mode = 'selfie';
+    else mode = 'firstPerson';   // 默认手机在自己手里拍眼前，只有明确“自拍/对着镜头”才走 selfie
+  }
+  // 用户偏好：对镜自拍更真实、看着舒服，约三成成品走对镜自拍。
+  const mirror = mode !== 'thirdPerson' && Math.random() < 0.32;
+  if (mirror) mode = 'selfie';
+  const mirrorLine = mirror
+    ? '这张拍成对镜自拍：她站在镜子前（洗手台镜、穿衣镜或电梯镜都行），手机举在胸前入镜、挡住脸或露半张脸，镜子里能看到身后的房间/墙/灯，自然的日常抓拍，不要摆拍。'
+    : '';
+  const viewRule = (character && character.viewRules && character.viewRules[mode]) || '';
+  let personLine = '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who;
+  if (mode === 'firstPerson' && !frontView) {
+    personLine = '这张不要出现正脸、不要自拍构图。如果画面里出现人，只允许出现她自己的手、腿、袖口、肩膀或背影。她本人是：' + who;
+  }
+  const prompt = [
+    '用你的图像生成工具画一张照片，并保存到：' + outFile,
+    '（必须真的生成图片文件，不要画 SVG，不要复制别的图片。）',
+    '',
+    refList.length ? ('参考图里的人就是主角（' + refList.length + ' 张都是同一个人），脸型、五官比例、鼻梁鼻头、眼型、唇形、发型都严格照着她画，只换场景和衣服；不要换脸。') : '',
+    personLine,
+    optional ? ('细节（不是每张都要出现）：' + optional) : '',
+    hairstyle ? ('这次发型：' + hairstyle + '（发型可以换，脸不变）') : '',
+    accessory ? ('这次发饰：' + accessory + '（发饰可以换）') : '',
+    outfit ? ('这次穿：' + outfit + '（衣服要和场景对得上，不要穿错场合）') : '',
+    (character && character.wardrobeRule) ? ('服装要求：' + character.wardrobeRule) : '',
+    deviceLine ? deviceLine : '',
+    nailsLine ? nailsLine : '',
+    handsLine,
+    jewelryLine,
+    '',
+    '这次的生活场景：' + text.slice(0, 200),
+  '先把这句话还原成一个具体瞬间（谁在哪、手里拿着什么、眼前第一眼看到什么、光线和时间），再拍那一瞬间。',
+  '如果这句话是在抱怨/说感受（比如「怎么都不发语音了」「好累」「不想上班」），就拍与之直接对应的画面：抱怨没语音就拍低头看手机、屏幕上一条语音；说累就拍摊在椅子上、鞋没脱；不要随便拍一顿饭应付。',
+  '不要拍和这句话无关的日常，也不要拍成素材图。',
+    viewRule ? ('拍照方式（重要）：' + viewRule) : '',
+    mirrorLine ? mirrorLine : '',
+    streetLine ? streetLine : '',
+    '',
+    '风格：' + style,
+    (character && character.realism) ? ('真实感：' + character.realism) : '',
+    (character && character.negativeExtra) ? ('不要：' + character.negativeExtra) : '',
+    '生活感（重要）：',
+    '1) 表情和眼神每张都要不一样：可以笑、皱眉、发呆、走神、看镜头或看手里的东西，不要每张都低头垂眼、面无表情、同一个角度；',
+    '2) 场景要日常真实，便利店、家里、工位、小饭馆、路边摊都行，别为了出片刻意去海边/景点，偶尔一次就好；',
+    '3) 食物和物品不要完美：煎蛋可以有焦边、煎破、歪着，吐司不规则，饭吃了一半、桌上有点乱，都正常，不要餐厅广告图那种摆盘；',
+    '4) 不是每张都要露脸：做指甲、拍吃的东西、拍物件、拍窗外、拍手/脚这类场景，用第一人称局部特写、画面里不出现脸，更真实；只有自拍、对镜、出去玩拍全身才露脸；',
+    '5) 文字要么清晰可读、要么别出现：书页、屏幕、招牌、菜单、包装上的字，场景需要时就在画面里写出简短、真实、清晰可读的文字（比如书封上的书名、菜单上一两个菜名）；写不出可读的字，就用虚化、遮挡、只拍局部或不拍正面避开，绝不生成乱码或写错的字；书不要拍内页正文——一整页密字做不出来、只摆几行会显得假，书只拍封面、合上的书、书脊或叠放的样子；宁可画面里少一个物件，也不要给一个假的；',
+    (character && character.candid ? ('6) ' + character.candid) : ''),
+    '7) 不要固定姿势：别每张都「手摸窗帘看窗外」「举手挡阳光」「托腮看镜头」「手撑桌子」，姿势和构图换着来，像随手拍的；',
+    '要求：',
+    '1) 竖构图或方构图都可以，像手机相册里的照片；',
+    frontView
+      ? '2) 可以有正脸，自然一点的日常表情（可以笑），但不要怼脸大特写、不要摆拍看镜头；'
+      : (mode === 'selfie'
+          ? '2) 可以正脸、可以笑，但必须是手机前置自拍那种近距离随手拍，不要像别人给你拍的照片；'
+          : '2) 不要出现第三人称全身摆拍；日常就是手机在手里拍眼前的东西，最多露手、脚、局部；'),
+    '3) 不要出现第二个人，不要网红脸，不要浓妆，不要文字、logo、水印、边框；',
+    '3.5) 第一人称时画面里不要出现手机（拍照的就是手机本体，桌面上不该再放一部），也不要出现正在被举着的相机；',
+    '3.6) 画面里如果有电脑、笔记本、电视、手机屏幕：屏幕里不要出现任何文字、图标、网页或软件界面，一律画成黑屏/息屏/只剩一层冷光或暖光的反光；实在拍不清就让屏幕背对镜头；',
+    '4) 画面要能对上这个场景，让人一看就知道在做什么。',
+    '完成后只回复一句话：已保存。'
+  ].join('\n');
+  return prompt;
+}
+
 /**
  * 让 Codex 自己画一张图存到 outFile。
  * 用于「固定人物 + 每天场景」的出图：人物长相由角色卡固定，场景由文案决定。
@@ -133,121 +251,10 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
   return new Promise((resolve) => {
     if (!available() || !outFile) return resolve(null);
     const dir = path.dirname(outFile);
+    const prompt = buildImagePrompt({ scene, character, outFile, frontView, view, references });
     try { fs.mkdirSync(dir, { recursive: true }); } catch { return resolve(null); }
     try { fs.rmSync(outFile, { force: true }); } catch { /* ignore */ }
-    const who = character && character.look ? character.look : '一个二十多岁的女生，长发，身材偏瘦，日常穿宽松卫衣和牛仔裤';
-    const optional = character && character.optional ? character.optional : '';
-    const text = String(scene || '');
-    let outfit = '';
-    let hairstyle = '';
-    let accessory = '';
-    if (character) {
-      const byScene = character.wardrobeByScene || {};
-      const pick = (list) => (Array.isArray(list) && list.length ? list[Math.floor(Math.random() * list.length)] : '');
-      const key = /睡衣|床上|居家|沙发|家里|房间/.test(text) ? 'home'
-        : /海边|沙滩|海风/.test(text) ? 'beach'
-        : /夜市|晚上|夜里|街边/.test(text) ? 'night'
-        : /公司|上班|开会|加班/.test(text) ? 'work'
-        : /下雨|雨天/.test(text) ? 'rain'
-        : /吃饭|面|火锅|外卖|咖啡|奶茶/.test(text) ? 'meal'
-        : 'street';
-      outfit = pick(byScene[key]) || pick(character.wardrobe) || '';
-      hairstyle = pick(character.hairstyles);
-      accessory = pick(character.accessories);
-    }
 
-    // 她拥有的电子设备固定，按场景选用；画面里出现设备只能是这些，别画出别的品牌。
-    let deviceLine = '';
-    if (character && character.devices) {
-      const dev = character.devices;
-      const device = /工作|代码|程序|写|改|调|bug|需求|电脑|笔记本|Mac|上线|部署|敲键盘/.test(text) ? dev.laptop
-        : /剧|漫画|番|平板|床上|沙发|躺着|追|刷剧|看片/.test(text) ? dev.tablet
-        : dev.phone;
-      deviceLine = '画面里出现的电子设备只能是她自己的：' + (device || dev.phone) + '。' + (dev.rule || '');
-    }
-
-    // 美甲场景：她做的是长款网红甲，不是短圆自然甲。
-    let nailsLine = '';
-    if (character && character.nails && /美甲|指甲|做指甲|甲油/.test(text)) {
-      nailsLine = '这次的美甲：' + character.nails + '。';
-    }
-
-    // 手部与首饰的固定风格，出图时保持一致。
-    const handsLine = character && character.hands ? ('手部：' + character.hands + '。') : '';
-    const jewelryLine = character && character.jewelry ? ('首饰：' + character.jewelry + '。') : '';
-
-    // 街景：普通小城市/县城街道的真实感，别拍成网红街、旅游宣传照。
-    let streetLine = '';
-    if (character && character.street && /街|路|巷|夜市|路边|摊|地铁口|商场外|县城|城中村|小区门|市场|广场|下雨|雨天/.test(text)) {
-      streetLine = '街景真实感（重要）：' + character.street + '；主角只是走在这条街上的普通人，随手拍或者被朋友顺手拍到，不摆拍、不看镜头。';
-    }
-
-    const style = (character && character.style) || '手机随手拍的日常照片，自然光，生活感，不要影楼布光，不要文字和水印';
-    let mode = view;
-    if (!mode || mode === 'auto') {
-      if (/出去玩|旅行|景点|海边|爬山|逛街|打卡|拍照/.test(text)) mode = 'thirdPerson';
-      else if (/自拍|对着镜头|正脸|脸/.test(text)) mode = 'selfie';
-      else mode = 'firstPerson';   // 默认手机在自己手里拍眼前，只有明确“自拍/对着镜头”才走 selfie
-    }
-    // 用户偏好：对镜自拍更真实、看着舒服，约三成成品走对镜自拍。
-    const mirror = mode !== 'thirdPerson' && Math.random() < 0.32;
-    if (mirror) mode = 'selfie';
-    const mirrorLine = mirror
-      ? '这张拍成对镜自拍：她站在镜子前（洗手台镜、穿衣镜或电梯镜都行），手机举在胸前入镜、挡住脸或露半张脸，镜子里能看到身后的房间/墙/灯，自然的日常抓拍，不要摆拍。'
-      : '';
-    const viewRule = (character && character.viewRules && character.viewRules[mode]) || '';
-    let personLine = '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who;
-    if (mode === 'firstPerson' && !frontView) {
-      personLine = '这张不要出现正脸、不要自拍构图。如果画面里出现人，只允许出现她自己的手、腿、袖口、肩膀或背影。她本人是：' + who;
-    }
-    const prompt = [
-      '用你的图像生成工具画一张照片，并保存到：' + outFile,
-      '（必须真的生成图片文件，不要画 SVG，不要复制别的图片。）',
-      '',
-      refList.length ? ('参考图里的人就是主角（' + refList.length + ' 张都是同一个人），脸型、五官比例、鼻梁鼻头、眼型、唇形、发型都严格照着她画，只换场景和衣服；不要换脸。') : '',
-      personLine,
-      optional ? ('细节（不是每张都要出现）：' + optional) : '',
-      hairstyle ? ('这次发型：' + hairstyle + '（发型可以换，脸不变）') : '',
-      accessory ? ('这次发饰：' + accessory + '（发饰可以换）') : '',
-      outfit ? ('这次穿：' + outfit + '（衣服要和场景对得上，不要穿错场合）') : '',
-      (character && character.wardrobeRule) ? ('服装要求：' + character.wardrobeRule) : '',
-      deviceLine ? deviceLine : '',
-      nailsLine ? nailsLine : '',
-      handsLine,
-      jewelryLine,
-      '',
-      '这次的生活场景：' + text.slice(0, 200),
-    '先把这句话还原成一个具体瞬间（谁在哪、手里拿着什么、眼前第一眼看到什么、光线和时间），再拍那一瞬间。',
-    '如果这句话是在抱怨/说感受（比如「怎么都不发语音了」「好累」「不想上班」），就拍与之直接对应的画面：抱怨没语音就拍低头看手机、屏幕上一条语音；说累就拍摊在椅子上、鞋没脱；不要随便拍一顿饭应付。',
-    '不要拍和这句话无关的日常，也不要拍成素材图。',
-      viewRule ? ('拍照方式（重要）：' + viewRule) : '',
-      mirrorLine ? mirrorLine : '',
-      streetLine ? streetLine : '',
-      '',
-      '风格：' + style,
-      (character && character.realism) ? ('真实感：' + character.realism) : '',
-      (character && character.negativeExtra) ? ('不要：' + character.negativeExtra) : '',
-      '生活感（重要）：',
-      '1) 表情和眼神每张都要不一样：可以笑、皱眉、发呆、走神、看镜头或看手里的东西，不要每张都低头垂眼、面无表情、同一个角度；',
-      '2) 场景要日常真实，便利店、家里、工位、小饭馆、路边摊都行，别为了出片刻意去海边/景点，偶尔一次就好；',
-      '3) 食物和物品不要完美：煎蛋可以有焦边、煎破、歪着，吐司不规则，饭吃了一半、桌上有点乱，都正常，不要餐厅广告图那种摆盘；',
-      '4) 不是每张都要露脸：做指甲、拍吃的东西、拍物件、拍窗外、拍手/脚这类场景，用第一人称局部特写、画面里不出现脸，更真实；只有自拍、对镜、出去玩拍全身才露脸；',
-      '5) 文字要么清晰可读、要么别出现：书页、屏幕、招牌、菜单、包装上的字，场景需要时就在画面里写出简短、真实、清晰可读的文字（比如书封上的书名、菜单上一两个菜名）；写不出可读的字，就用虚化、遮挡、只拍局部或不拍正面避开，绝不生成乱码或写错的字；书不要拍内页正文——一整页密字做不出来、只摆几行会显得假，书只拍封面、合上的书、书脊或叠放的样子；宁可画面里少一个物件，也不要给一个假的；',
-      (character && character.candid ? ('6) ' + character.candid) : ''),
-      '7) 不要固定姿势：别每张都「手摸窗帘看窗外」「举手挡阳光」「托腮看镜头」「手撑桌子」，姿势和构图换着来，像随手拍的；',
-      '要求：',
-      '1) 竖构图或方构图都可以，像手机相册里的照片；',
-      frontView
-        ? '2) 可以有正脸，自然一点的日常表情（可以笑），但不要怼脸大特写、不要摆拍看镜头；'
-        : (mode === 'selfie'
-            ? '2) 可以正脸、可以笑，但必须是手机前置自拍那种近距离随手拍，不要像别人给你拍的照片；'
-            : '2) 不要出现第三人称全身摆拍；日常就是手机在手里拍眼前的东西，最多露手、脚、局部；'),
-      '3) 不要出现第二个人，不要网红脸，不要浓妆，不要文字、logo、水印、边框；',
-      '3.5) 第一人称时画面里不要出现手机（拍照的就是手机本体，桌面上不该再放一部），也不要出现正在被举着的相机；',
-      '3.6) 画面里如果有电脑、笔记本、电视、手机屏幕：屏幕里不要出现任何文字、图标、网页或软件界面，一律画成黑屏/息屏/只剩一层冷光或暖光的反光；实在拍不清就让屏幕背对镜头；',
-      '4) 画面要能对上这个场景，让人一看就知道在做什么。',
-      '完成后只回复一句话：已保存。'
-    ].join('\n');
     const started = Date.now();
     if (process.env.WHALE_IMG_PROMPT_FILE) {
       try { fs.writeFileSync(process.env.WHALE_IMG_PROMPT_FILE, prompt); } catch { /* ignore */ }
@@ -282,4 +289,4 @@ function generateImage({ scene, character, outFile, timeoutMs, frontView = false
   });
 }
 
-module.exports = { generateImage, available, choose, parseResult, buildPrompt };
+module.exports = { generateImage, buildImagePrompt, available, choose, parseResult, buildPrompt };
