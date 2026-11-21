@@ -1082,28 +1082,60 @@ function rememberCreated(whale, chatId, file) {
 }
 
 function recallCreated(whale, chatId, maxAgeMs) {
+  const maxAge = maxAgeMs || 24 * 60 * 60 * 1000;
   try {
     const data = JSON.parse(fs.readFileSync(createdFile(whale, chatId), 'utf8'));
-    const p = String((data && data.path) || '');
-    if (!p || !fs.existsSync(p)) return null;
-    if (Date.now() - Number((data && data.at) || 0) > (maxAgeMs || 24 * 60 * 60 * 1000)) return null;
-    return p;
-  } catch {
-    return null;
-  }
+    const p = normalizeCreatedPath((data && data.path) || '');
+    if (p && fs.existsSync(p) && Date.now() - Number((data && data.at) || 0) <= maxAge) return p;
+  } catch { /* 没有记录就往日志里翻 */ }
+  // 兜底：内核重启、记录文件丢了，就从最近的 Codex 日志里找它刚建的文件
+  return rememberCreatedFromText(whale, chatId, codexLogText(whale, maxAge));
 }
 
 // Codex 跑完常把文件路径写在回复里，顺手记下它建出来的文件
-const CREATED_PATH_RE = /[A-Za-z]:\\[^\s"'“”‘’<>|，。；：、）()\[\]【】]+/g;
+const CREATED_PATH_RE = /[A-Za-z]:[\\/][^\s"'“”‘’<>|，。；：、）()\[\]【】`]+/g;
+
+// Codex 有时给反斜杠路径、有时给正斜杠（markdown 链接里），统一成本地写法
+function normalizeCreatedPath(raw) {
+  return String(raw || '').trim().replace(/[.。,;:]+$/, '').replace(/\//g, '\\');
+}
 
 function rememberCreatedFromText(whale, chatId, text) {
   const hits = String(text || '').match(CREATED_PATH_RE) || [];
   for (let i = hits.length - 1; i >= 0; i--) {
-    const p = hits[i].replace(/[.。,]+$/, '');
+    const p = normalizeCreatedPath(hits[i]);
+    if (!p) continue;
     try {
-      if (fs.statSync(p).isFile()) { rememberCreated(whale, chatId, p); return; }
+      if (fs.statSync(p).isFile()) { rememberCreated(whale, chatId, p); return p; }
     } catch { /* 不是文件就继续往前找 */ }
   }
+  return null;
+}
+
+// 最近的 Codex 日志文本（maxAgeMs 内才用）；日志里既有命令输出也有最后一句回复
+function codexLogText(whale, maxAgeMs) {
+  const dir = whale && whale.paths && whale.paths.pluginData;
+  if (!dir) return '';
+  const found = latestCodexLog(dir);
+  if (!found || !found.text) return '';
+  try {
+    if (maxAgeMs && Date.now() - fs.statSync(found.file).mtimeMs > maxAgeMs) return '';
+  } catch { /* 读不到时间就当新鲜 */ }
+  return found.text;
+}
+
+// 日志里最后一条 agent_message（Codex 没写 --output-last-message 时的兜底）
+function lastAgentText(logText) {
+  let out = '';
+  for (const line of String(logText || '').split(/\r?\n/)) {
+    if (!line.includes('agent_message')) continue;
+    try {
+      const evt = JSON.parse(line);
+      const item = evt && evt.item;
+      if (item && item.type === 'agent_message' && item.text) out = String(item.text);
+    } catch { /* 非完整行忽略 */ }
+  }
+  return out;
 }
 
 // 最近几条主人消息的完整文本（比 rememberLast 长），「把这些记一下」没给内容时从这里翻上一大段
@@ -1555,6 +1587,15 @@ function waitCodex(state, timeoutMs) {
   });
 }
 
+// Codex 喜欢回 markdown 链接；本地路径链接到了微信里容易被当成无效附件整行丢掉，这里转成纯文本
+function plainCodexText(text) {
+  return String(text || '')
+    .replace(/\[([^\]\n]{1,80})\]\((?:file:\/\/\/)?([A-Za-z]:[\\/][^)\s]+|[^)\s]+)\)/g, (all, label, url) => (
+      /^[A-Za-z]:[\\/]/.test(url) || /^file:/i.test(all) ? label : label + '（' + url + '）'
+    ))
+    .trim();
+}
+
 async function runCodexJob(ctx, settings, chatId, pending) {
   const whale = ctx.whale;
   if (jobs.has(chatId)) return { text: '这个聊天里已经有任务在跑了，等它结束或发「取消」。' };
@@ -1568,18 +1609,28 @@ async function runCodexJob(ctx, settings, chatId, pending) {
   const quick = await Promise.race([result, new Promise(resolve => setTimeout(() => resolve(null), 25000))]);
   if (quick) {
     jobs.delete(chatId);
+    const logText = quick.ok ? codexLogText(whale) : '';
+    const text = quick.ok ? plainCodexText(String(quick.text || '').trim() || lastAgentText(logText)) : '';
     audit(whale, { action: 'codex.done', ok: quick.ok, ms: Date.now() - job.startedAt, chatId });
-    appLog(whale, 'codex', (quick.ok ? 'ok ' : 'fail ') + Math.round((Date.now() - job.startedAt) / 1000) + 's ' + clip(quick.ok ? quick.text : quick.message, 400));
-    if (quick.ok) rememberCreatedFromText(whale, chatId, quick.text);
-    return { text: quick.ok ? clip('Codex 完成：\n' + quick.text) : quick.message };
+    appLog(whale, 'codex', (quick.ok ? 'ok ' : 'fail ') + Math.round((Date.now() - job.startedAt) / 1000) + 's ' + clip(quick.ok ? text : quick.message, 400));
+    if (quick.ok) {
+      if (text) rememberCreatedFromText(whale, chatId, text);
+      if (logText) rememberCreatedFromText(whale, chatId, logText);
+    }
+    return { text: quick.ok ? clip('Codex 完成：\n' + (text || '跑完了，但没留下文字结果。')) : quick.message };
   }
 
   result.then(async done => {
     jobs.delete(chatId);
+    const logText = done.ok ? codexLogText(whale) : '';
+    const text = done.ok ? plainCodexText(String(done.text || '').trim() || lastAgentText(logText)) : '';
     audit(whale, { action: 'codex.done', ok: done.ok, ms: Date.now() - job.startedAt, chatId });
-    appLog(whale, 'codex', (done.ok ? 'ok ' : 'fail ') + Math.round((Date.now() - job.startedAt) / 1000) + 's ' + clip(done.ok ? done.text : done.message, 400));
-    if (done.ok) rememberCreatedFromText(whale, chatId, done.text);
-    const body = done.ok ? clip('Codex 完成：\n' + done.text) : done.message;
+    appLog(whale, 'codex', (done.ok ? 'ok ' : 'fail ') + Math.round((Date.now() - job.startedAt) / 1000) + 's ' + clip(done.ok ? text : done.message, 400));
+    if (done.ok) {
+      if (text) rememberCreatedFromText(whale, chatId, text);
+      if (logText) rememberCreatedFromText(whale, chatId, logText);
+    }
+    const body = done.ok ? clip('Codex 完成：\n' + (text || '跑完了，但没留下文字结果。')) : done.message;
     await deliver(whale, chatId, body, ctx.message.chatType);
   });
   return { text: '已经让 Codex 开始跑了，跑完我发到这个聊天（最长 ' + CODEX_TIMEOUT + ' 秒）。' };

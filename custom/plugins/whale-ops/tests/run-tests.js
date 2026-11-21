@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 
 'use strict';
@@ -583,4 +583,24 @@ test('解析器先失败时交给模型兜底', async () => {
   process.exitCode = failed ? 1 : 0;
 })();
 
-
+test('Codex 日志里记下的文件也能「把文件发我」发出去', async () => {
+  const chatId = 'wxid_send_me_log';
+  const dir = path.join(tmp, '日志建的文件');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, '日志测试.txt');
+  fs.writeFileSync(file, '日志兜底', 'utf8');
+  const logDir = path.join(tmp, '.pluginData', 'codex');
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.writeFileSync(path.join(logDir, 'run-9999999999999.log'), [
+    JSON.stringify({ type: 'item.completed', item: { id: 'item_1', type: 'command_execution', aggregated_output: file + '\r\n', exit_code: 0, status: 'completed' } }),
+    JSON.stringify({ type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: '已创建：[' + path.basename(file) + '](' + file.replace(/\\/g, '/') + ')' } }),
+  ].join('\n'), 'utf8');
+  const calls = [];
+  const api = async (url, options) => {
+    calls.push({ url, options });
+    return options ? { status: 202, ok: true, body: { ok: true, jobId: 'job-log' } } : { status: 200, ok: true, body: { ok: true, status: 'submitted' } };
+  };
+  const out = await gen('把文件发我', { chatId, overrides: { prefix: '', roots: [tmp] }, api });
+    assert.match(out.output.text, /已把 日志测试\.txt 发给/);
+  assert.equal(calls[0].url, '/api/send-file');
+});
