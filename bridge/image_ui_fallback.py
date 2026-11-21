@@ -71,6 +71,44 @@ def _visible_previews(win, process, main, pid):
     return handles
 
 
+def _copy_preview_to_clipboard(preview, *, pause=time.sleep, retries=8):
+    """让微信预览窗把原图复制进剪贴板，再直接读位图——绕开磁盘 .dat 的解密密钥。
+
+    微信收到的图片在 xwechat_files 里是 AES 加密存储的，4.2 上取不到密钥；
+    但预览窗显示的是解码后的原图，Ctrl+C 就能把它放进剪贴板，拿到的就是
+    完整分辨率位图，比截屏更清楚也更快。
+    """
+    import ctypes
+
+    import win32con
+    import win32gui
+
+    try:
+        from PIL import ImageGrab
+    except Exception:
+        return None
+    try:
+        win32gui.SetForegroundWindow(preview)
+    except Exception:
+        return None
+    user32 = ctypes.windll.user32
+    user32.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+    try:
+        user32.keybd_event(ord('C'), 0, 0, 0)
+        user32.keybd_event(ord('C'), 0, win32con.KEYEVENTF_KEYUP, 0)
+    finally:
+        user32.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+    for _ in range(retries):
+        pause(0.1)
+        try:
+            got = ImageGrab.grabclipboard()
+        except Exception:
+            got = None
+        if got is not None and hasattr(got, 'size'):
+            return got
+    return None
+
+
 def capture_preview_image(request, *, win, process, uia, locator, inp, grab, pause=time.sleep):
     main, pid = request['hwnd'], request['pid']
     if (not win.IsWindow(main) or not win.IsWindowVisible(main) or win.IsIconic(main)
@@ -143,11 +181,15 @@ def capture_preview_image(request, *, win, process, uia, locator, inp, grab, pau
         if not preview:
             raise PreviewUnavailable('preview_not_opened')
 
-        # 通过窗口句柄获取画面，避免把聊天列表或遮挡预览的窗口送去识图。
+        # 首选：剪贴板拿原图（预览窗 Ctrl+C），完全绕开图片密钥；拿不到再截屏。
         pause(0.4)
         if fresh_preview() != preview:
             raise PreviewUnavailable('preview_changed')
-        image = grab(window=preview).convert('RGB')
+        image = _copy_preview_to_clipboard(preview, pause=pause)
+        if image is not None:
+            image = image.convert('RGB')
+        else:
+            image = grab(window=preview).convert('RGB')
         if fresh_preview() != preview:
             raise PreviewUnavailable('preview_changed')
         if min(image.size) < 120 or all(lo == hi for lo, hi in image.getextrema()):

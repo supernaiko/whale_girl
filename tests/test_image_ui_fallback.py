@@ -44,9 +44,12 @@ class ImagePreviewTests(unittest.TestCase):
         )
         self.locator = SimpleNamespace(
             _visible_rows=lambda messages: [('image', '图片', self.row)],
+            # 取原件同一条定位路径（1fb6445 起）：默认命中第一行，None 表示被顶出可视区
+            _locate_image_row=lambda *args, **kwargs: self._locate_result,
             _align_index=Mock(return_value=0),
             _bubble_click_xs=lambda rect, own: [170, 430],
         )
+        self._locate_result = (self.row, '')
         self.inp = SimpleNamespace(real_click=Mock(side_effect=lambda *args: self.open_preview()))
         image = Image.new('RGB', (400, 300), 'white')
         image.paste('blue', (0, 0, 200, 150))
@@ -78,7 +81,7 @@ class ImagePreviewTests(unittest.TestCase):
         with self.assertRaisesRegex(PreviewUnavailable, 'conversation_mismatch'):
             self.capture()
         self.uia.current_chat.return_value = self.request['chat']
-        self.locator._align_index.return_value = None
+        self._locate_result = (None, '')
         with self.assertRaisesRegex(PreviewUnavailable, 'message_not_aligned'):
             self.capture()
         self.inp.real_click.assert_not_called()
