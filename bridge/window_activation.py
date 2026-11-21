@@ -123,6 +123,57 @@ def _bring_to_front(hwnd):
     return win32gui.GetForegroundWindow() == hwnd
 
 
+def _render_window_ready(hwnd, *, min_width=500):
+    """微信渲染子窗口（MMUIRenderSubWindow）铺开到正常宽度才算就绪。
+
+    窗口从最小化恢复后，Qt 渲染子窗口会先停留在极小尺寸（如 160）再异步
+    铺开；此期间 UIA 树里没有消息列表，发送/图片兜底会卡住或失败。
+    返回是否就绪。
+    """
+    import ctypes
+
+    import win32gui
+
+    if not hwnd or not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+        return False
+    user32 = ctypes.windll.user32
+    found = []
+
+    def _cb(h, _):
+        try:
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(h, buf, 256)
+            if buf.value.startswith('MMUIRenderSubWindow'):
+                rr = win32gui.GetWindowRect(h)
+                w = rr[2] - rr[0]
+                ht = rr[3] - rr[1]
+                if w > 0 and ht > 0:
+                    found.append((w * ht, w))
+        except Exception:
+            pass
+        return True
+
+    win32gui.EnumChildWindows(hwnd, _cb, None)
+    if found:
+        # 取面积最大的渲染子窗口
+        return max(found, key=lambda t: t[0])[1] >= min_width
+    # 找不到渲染子窗口：回退按主窗口尺寸判断
+    rr = win32gui.GetWindowRect(hwnd)
+    return (rr[2] - rr[0]) >= min_width
+
+
+def wait_render_ready(hwnd, *, timeout=5.0, min_width=500):
+    """恢复微信窗口后等待渲染子窗口铺开（UIA 消息列表可用的前兆）。"""
+    import time
+
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _render_window_ready(hwnd, min_width=min_width):
+            return True
+        time.sleep(0.2)
+    return _render_window_ready(hwnd, min_width=min_width)
+
+
 def activate_target(hwnd):
     """发送路径恢复前台：先像人一样恢复窗口，再走上游的置顶+挂接前台线程激活。"""
     import time
@@ -147,12 +198,18 @@ def activate_target(hwnd):
                 if not win32gui.IsIconic(hwnd):
                     break
                 time.sleep(0.12)
+            # 窗口已恢复，但 Qt 渲染子窗口还会异步铺开；等它就绪，否则 UIA 树空。
+            wait_render_ready(hwnd)
         elif not win32gui.IsWindowVisible(hwnd):
             win32gui.ShowWindowAsync(hwnd, 4)
             time.sleep(0.15)
+            wait_render_ready(hwnd)
         if win32gui.GetForegroundWindow() == hwnd:
+            wait_render_ready(hwnd)
             return True
-        return _bring_to_front(hwnd)
+        if _bring_to_front(hwnd):
+            wait_render_ready(hwnd)
+        return win32gui.GetForegroundWindow() == hwnd
     except Exception:
         return False
 
