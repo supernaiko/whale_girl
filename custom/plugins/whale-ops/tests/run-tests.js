@@ -343,6 +343,21 @@ test('没建过文件时说「把文件发我」不调接口，提示给路径',
   assert.equal(calls, 0);
 });
 
+test('「把 <路径> 发给我」也发到当前会话', async () => {
+  const chatId = 'wxid_send_me_path';
+  const file = path.join(tmp, '测试路径发我.txt');
+  fs.writeFileSync(file, '路径直接发', 'utf8');
+  const calls = [];
+  const api = async (url, options) => {
+    calls.push({ url, options });
+    return options ? { status: 202, ok: true, body: { ok: true, jobId: 'job-c' } }
+      : { status: 200, ok: true, body: { ok: true, status: 'submitted' } };
+  };
+  const out = await gen(`把 ${file} 发给我`, { chatId, overrides: { prefix: '', roots: [tmp] }, api });
+  assert.match(out.output.text, /已把 测试路径发我\.txt 发给/);
+  assert.deepEqual(calls[0], { url: '/api/send-file', options: { method: 'POST', body: { chat: chatId, path: file } } });
+});
+
 test('打开白名单外软件：直接拒绝，不留待确认', async () => {
   const first = await gen('助手 打开 微信');
   assert.match(first.output.text, /不在软件白名单里/);
