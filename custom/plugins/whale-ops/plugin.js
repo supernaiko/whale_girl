@@ -245,12 +245,15 @@ function natural(raw) {
       .replace(/^[：:，,、\s]+/, '')
       .replace(/(?:里|中|内)$/, '')
       .trim();
-    if (after && /^(?:并且|然后|顺便)?\s*(?:分个?类|归个?类|整理(?:一下|下)?|分类|归类)[了]?$/.test(after)) after = '';
+    const wantClassify = /^(?:并且|然后|顺便)?\s*(?:分(?:个|好)?类|归(?:个|好)?类|整理(?:一下|下)?|分类|归类)[好了]?$/.test(after);
+    if (wantClassify) after = '';
     const content = after || before;
     // 纯指代（这些/那个/网站…）或只有「记一下」没内容：交给 dispatch 去翻上一大段
     const filler = /^(这些|那些|这个|那个|它|它们|我|你|他|她|这|那|这些网站|网站|这个网站|这些东西|那些东西)$/;
-    if (content && !filler.test(content)) return '记一下 ' + content;
-    return '记一下';
+    // 带「分类/整理」意图的记小本本：交给 Codex 去理解+分类+写文件（见 dispatch 的「记一下分类」分支）
+    const classify = wantClassify || /(?:分类|归类|整理|分个类|归个类)/.test(t);
+    if (content && !filler.test(content)) return (classify ? '记一下分类 ' : '记一下 ') + content;
+    return classify ? '记一下分类' : '记一下';
   }
   if (/(?:小本本(?:里|中)?(?:记(?:了|着)?(?:什么|啥|哪些)|有(?:什么|啥|哪些))|(?:之前|以前)让你记的|我让你记的|你记得我让你记)/.test(t)) return '回忆 ' + t;
   // 「用 codex 在桌面建个 md」「使用 codex 让他…」：动词后面必须跟得上具体任务才接，
@@ -1197,6 +1200,18 @@ async function dispatch(ctx, settings, state) {
   }
   if (/^发文件(?:\s|$)/.test(body)) return { text: '这样说：发文件 D:\\报告\\a.pdf 给 文件传输助手。' };
 
+  // 「把这些记一下并且分类好」：分类/整理要理解内容，交给 Codex 去读+分类+写文件
+  // 必须放在 memoHit 之前——「记一下分类」会被 memoHit 的正则贪婪匹配成 content=「分类」
+  const classifyMemoHit = body.match(/^记一下分类\s*([\s\S]*)$/);
+  if (classifyMemoHit) {
+    let content = String(classifyMemoHit[1] || '').trim();
+    if (!content) content = lastSubstantive(whale, chatId, message.text);
+    if (!content) return { text: '要分类记什么？把内容发给我。' };
+    const task = '把下面这段内容按主题分成若干小节（每节一个「## 主题」标题），每条内容用一句话概括要点，' +
+      '然后追加写进 ' + memoFolder(settings) + '\\小本本.md 文件末尾（Markdown 列表，每行「- 一句话要点」）。' +
+      '直接操作文件，最后只回一句话说明分成了哪几类。内容：\n' + clip(content, 6000);
+    return runConfirmed(ctx, settings, chatId, { kind: 'codex', task, cwd: settings.dsh.workspace, at: Date.now() });
+  }
   const memoHit = body.match(/^记一下\s*([\s\S]*)$/);
   if (memoHit) {
     let content = String(memoHit[1] || '').trim();

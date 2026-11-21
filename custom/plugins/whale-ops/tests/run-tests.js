@@ -159,6 +159,21 @@ test('「我是让你把这些网站记在小本本里」不会再写成单个�
   assert.ok(!/^\s*-\s*[^ ]*里\s*$/.test(written), '不该只记一个「里」');
 });
 
+test('「记一下并且分类好」交给 codex 分类，不本地直接写', async () => {
+  const memo = path.join(tmp, '小本本分类');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-classify-chat';
+  const taskFile = path.join(tmp, 'codex-task-classify.txt');
+  process.env.STUB_TASK_FILE = taskFile;
+  await pre('十个视频工具：HyperFrames 做动效视频；video-use 剪视频；Remotion 批量做视频；ffmpeg-skill 万能剪辑；agent-caption 自动字幕。', { chatId, overrides });
+  const out = await gen('把这些记一下并且分类好', { chatId, overrides });
+  assert.doesNotMatch(out.output.text || '', /没听懂|要记什么/);
+  const stub = fs.readFileSync(taskFile, 'utf8');
+  assert.match(stub, /分类|主题|小本本\.md/);
+  assert.match(stub, /HyperFrames/);
+  assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '走 codex 不该本地直接写');
+});
+
 test('自己干不了的电脑活儿（剪辑/下载）整句丢给 codex', async () => {
   const overrides = { prefix: '', roots: [tmp] };
   const taskFile = path.join(tmp, 'codex-task-fallback.txt');
