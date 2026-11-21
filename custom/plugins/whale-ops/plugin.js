@@ -1414,27 +1414,16 @@ async function runConfirmed(ctx, settings, chatId, pending) {
       return { text: '文件任务未入队。' + (result.body?.error || '') };
     }
     // 留出回复时间。桥接正在处理其他消息时，可用任务号查队列状态。
-    let retried = false;
-    for (let attempt = 0; attempt < 20; attempt++) {
+    for (let attempt = 0; attempt < 60; attempt++) {
       try {
         const status = await whale.api('/api/send-file/status?id=' + encodeURIComponent(jobId));
         if (!status.ok) break;
         const state = status.body?.status;
         if (state === 'submitted') return { text: '已把 ' + path.basename(checked.file) + ' 发给「' + pending.target + '」，你那边看一下收到没。' };
-        // 打不开目标会话多半是窗口没切过来，隔一秒再提交一次，别直接报失败。
-        if (state === 'target_unavailable' && !retried) {
-          retried = true;
-          await new Promise(resolve => setTimeout(resolve, 900));
-          try {
-            const again = await whale.api('/api/send-file', { method: 'POST', body: { chat: pending.target, path: checked.file } });
-            const nextId = again.body?.jobId;
-            if (nextId) { jobId = nextId; attempt = 0; continue; }
-          } catch { /* 落到下面的兜底文案 */ }
-        }
         if (status.body?.error) {
           const why = String(status.body.error);
           if (state === 'target_unavailable') {
-            return { text: '文件排上队了，但微信那边没能定位到「' + pending.target + '」这个会话（可能窗口被别的聊天占着）。任务号 ' + jobId + '，稍后再发一次也行。' };
+            return { text: '微信窗口一直没切过来，文件还没发出去。你把微信切到前台再喊我一次就行。' };
           }
           return { text: why };
         }

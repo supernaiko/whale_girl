@@ -8,10 +8,14 @@ const { describeError } = require('../infra/errors');
 const MAX_BYTES = 1024n ** 3n;
 const JOB_TTL = 90_000;
 const RESULT_TTL = 300_000;
+// 微信窗口一时抢不到前台（用户正在用电脑）不算失败：隔一会儿再试，
+// 免得文件没发出去还把话堵死。
+const TARGET_RETRIES = 3;
+const TARGET_RETRY_DELAY = 45_000;
 const RESULTS = {
   submitted: '',
   unconfirmed: '微信发送结果未能确认，请先查看目标会话。若有附件草稿，请手动清空。',
-  target_unavailable: '无法唯一定位目标会话或验证微信窗口。',
+  target_unavailable: '微信窗口一直没能切到前台，文件还没发出去。稍后会自动再试；也可以先切到微信窗口再让我发。',
   blocked: '当前微信账号、会话或插件授权不允许发送。',
   file_changed: '文件已变化或无法读取，请重新发起命令。',
   failed: '微信未能提交附件，请检查目标会话和输入框草稿。',
@@ -64,7 +68,7 @@ class FileSendQueue {
     const id = randomUUID();
     const job = { id, chat: chat.trim(), path: file, note, size: Number(info.size), modifiedNs: String(info.mtimeNs),
       account: gateway.bridge.account, wantedAccount: this.runtime.config.wechat?.account,
-      pluginId, pluginHash, status: 'queued', until: Date.now() + JOB_TTL };
+      pluginId, pluginHash, attempts: 0, status: 'queued', until: Date.now() + JOB_TTL };
     this.jobs.set(id, job);
     this.runtime.logger.info(`[send-file] id=${id} status=queued bytes=${info.size} noteLength=${note.length}`);
     return { jobId: id };
@@ -78,8 +82,10 @@ class FileSendQueue {
 
   claim(account) {
     this.sweep();
+    const now = Date.now();
     for (const job of this.jobs.values()) {
       if (job.status !== 'queued' || job.account !== account) continue;
+      if (job.notBefore && job.notBefore > now) continue;
       if (!this.allowed(job, account)) {
         this.finish(job, 'blocked');
         continue;
@@ -103,6 +109,15 @@ class FileSendQueue {
     const job = this.jobs.get(id);
     if (job?.status !== 'sending' || job.account !== account || typeof status !== 'string'
         || !Object.hasOwn(RESULTS, status) || status === 'expired') return false;
+    if (status === 'target_unavailable' && job.attempts < TARGET_RETRIES) {
+      // 放回队列，过一会儿再试一次，而不是立刻报失败。
+      job.attempts += 1;
+      job.status = 'queued';
+      job.notBefore = Date.now() + TARGET_RETRY_DELAY;
+      job.until = job.notBefore + JOB_TTL;
+      this.runtime.logger.info(`[send-file] id=${job.id} status=retry attempt=${job.attempts}`);
+      return true;
+    }
     this.finish(job, status);
     return true;
   }

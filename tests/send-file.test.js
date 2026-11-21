@@ -57,6 +57,28 @@ test('文件接口校验本机 token、会话、绝对路径、文件类型、�
   assert.equal((await request('', { ...input, path: oversized })).status, 413);
 });
 
+test('抢不到微信前台时先放回队列重试，重试次数用完才报失败', async t => {
+  const { file, request, runtime } = await fixture(t);
+  const out = await request('', { chat: '文件传输助手', path: file });
+  const id = out.body.jobId;
+  const subject = { id, account: ACCOUNT };
+  const queue = runtime.fileSend;
+  const status = () => request('/status?id=' + id);
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    const claimed = (await request('/claim', { account: ACCOUNT })).body.item;
+    assert.equal(claimed?.id, id);
+    assert.equal((await request('/ack', { ...subject, status: 'target_unavailable' })).status, 200);
+    assert.equal((await status()).body.status, attempt < 4 ? 'queued' : 'target_unavailable');
+    if (attempt < 4) {
+      // 冷却期内不重复领取，冷却结束后重新排上。
+      assert.equal((await request('/claim', { account: ACCOUNT })).body.item, null);
+      queue.jobs.get(id).notBefore = 0;
+    }
+  }
+  assert.match((await status()).body.error, /窗口.*没能切到前台/);
+});
+
 test('仅入队绑定账号可领取，重复领取及重复回执不会再次推进任务', async t => {
   const { file, request } = await fixture(t);
   const out = await request('', { chat: ' 测试群 ', path: file, note: '附言' });
