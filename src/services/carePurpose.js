@@ -189,11 +189,11 @@ function buildGeneration(runtime, state, collected, now = Date.now()) {
 function splitPurposeReply(raw) {
   const s = String(raw ?? '').trim();
   if (!s) return { message: '', memo: null };
-  const marker = /【(?:目的|需求|情绪|类型|状态|待续)】/;
+  const marker = /【(?:目的|需求|情绪|类型|状态|待续)】|(?:^|\n)[ \t]*内部备忘[ \t]*(?=\n|$)/;
   const hit = marker.exec(s);
   if (!hit) return { message: s, memo: null };
-  const lineStart = s.lastIndexOf('\n', hit.index - 1);
-  const message = (lineStart >= 0 ? s.slice(0, lineStart) : s.slice(0, hit.index)).trim();
+  const cutAt = s.slice(0, hit.index).replace(/[ \t\n]+$/, '').length;
+  const message = s.slice(0, cutAt).trim();
   const memoText = s.slice(hit.index);
   return { message, memo: pe.parsePurposeMemo(memoText) };
 }
@@ -202,6 +202,7 @@ function splitPurposeReply(raw) {
 function cleanPurposeMessage(text, max = 200) {
   let s = String(text ?? '').trim();
   s = s.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '');
+  s = s.replace(/(?:^|\n)[ \t]*内部备忘[ \t]*(?:\n|$)/g, '\n');
   s = s.replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
   if (!s) return '';
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;

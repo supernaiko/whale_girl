@@ -67,6 +67,20 @@ test('splitPurposeReply 无备忘时整段当消息', () => {
   assert.strictEqual(memo, null);
 });
 
+test('splitPurposeReply 只写「内部备忘」四个字也切掉', () => {
+  const raw = '诶，问你个事，你歌单里那种苦情味儿的歌是不是特别多啊\n内部备忘';
+  const { message, memo } = cp.splitPurposeReply(raw);
+  assert.strictEqual(message, '诶，问你个事，你歌单里那种苦情味儿的歌是不是特别多啊');
+  assert.strictEqual(memo, null);
+});
+
+test('cleanPurposeMessage 去掉残留的「内部备忘」行', () => {
+  assert.strictEqual(
+    cp.cleanPurposeMessage('说回歌单，那些歌听着叹气那种？\n内部备忘'),
+    '说回歌单，那些歌听着叹气那种？',
+  );
+});
+
 test('cleanPurposeMessage 剥引号折叠空白', () => {
   assert.strictEqual(cp.cleanPurposeMessage('"  你好呀  "'), '你好呀');
   assert.strictEqual(cp.cleanPurposeMessage(''), '');
