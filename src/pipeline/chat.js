@@ -623,6 +623,8 @@ class Bot {
       } catch { /* ignore */ }
     }
 
+    // 提前算主人判定：落库时要把「是不是主人说的」写进记忆卡（后面 :676 的判定与日志复用这里）
+    const masterHit = matchMaster(this.config, msg);
     const hasText = Boolean(clean.text);
     let appended = null;
     if (hasText && !msg.recycled) {
@@ -636,6 +638,7 @@ class Bot {
           text: clean.text,
           ts: nowMs,
           msgId: msg.msgId,
+          isOwner: masterHit.isMaster,
           addressedToBot: msg.addressedToBot,
           mentionedNames,
           inferredTargetNames: msg.inferredTargetNames || [],
@@ -671,7 +674,6 @@ class Bot {
     // 规则只写在 src/core/master.js，启动器的提示词预览用的是同一个函数，不会出现
     //「预览说认了、微信里却当陌生人」这种两边打架的情况。
     const masterCfg = (this.config.persona && this.config.persona.master) || {};
-    const masterHit = matchMaster(this.config, msg);
     const isMaster = masterHit.isMaster;
     // 每条微信私聊都留一行判定，出问题直接看日志，不用猜
     if (msg.platform === 'wechat' && msg.chatType === 'private' && this.logger) {
@@ -1129,7 +1131,7 @@ class Bot {
     if (this.moments && isMaster && !isGroup && momentsIntent(clean.text)) {
       try { momentsBlock = this.moments.contextBlock(); } catch { momentsBlock = ''; }
     }
-    const memoryBlock = [mem.block, mem.relationsBlock, momentsBlock].filter(Boolean).join('\n\n');
+    const memoryBlock = [mem.block, mem.memoryCardBlock, mem.relationsBlock, momentsBlock].filter(Boolean).join('\n\n');
     const turns = this.buildTurns({ ...msg, ts: nowMs }, historyForTurns, memoryBlock, tail);
 
     // 预算：system 只测量，不裁剪；dialogueBudget 默认 5,500，给裁剪窗口用。

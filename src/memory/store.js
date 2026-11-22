@@ -23,6 +23,7 @@ const { LIMITS, DAY_MS } = require('./constants');
 const { estimateTokens, estimateBudgetTokens } = require('./tokens');
 const { describeError } = require('../infra/errors');
 const { readJson, readJournal } = require('../infra/jsonFile');
+const memoryCard = require('./memoryCard');
 
 /* ------------------------------ 旧文件读取（兼容工具） ------------------------------ */
 
@@ -98,6 +99,53 @@ class Store {
       if (this.logger) this.logger.warn('旧记忆迁移失败（不影响新记忆）：' + describeError(err));
     }
     this._syncSessions();
+    // surfcore 衰减记忆卡：她自己（雅小奈）的经历记忆，会遗忘、主人重要的不会忘。
+    // 与 personCard（「关于聊天对象」的了解）语义不同、并存；存 memoryDir/memory-card/ 全局一份。
+    this.mcPaths = memoryCard.resolveMemoryCardPaths(path.join(this.memoryDir, 'memory-card'));
+    this._mcCard = null;
+  }
+
+  _memoryCard() {
+    if (!this._mcCard) {
+      this._mcCard = memoryCard.loadMemoryCard(this.mcPaths) || memoryCard.createEmptyCard(this._now());
+    }
+    return this._mcCard;
+  }
+
+  _saveMemoryCard() {
+    const card = this._mcCard;
+    if (!card) return;
+    const file = this.mcPaths.json;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, `${JSON.stringify(card, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+      fs.renameSync(tmp, file);
+    } catch (err) {
+      if (this.logger) this.logger.warn('记忆卡写入失败（不影响聊天）：' + describeError(err));
+    }
+  }
+
+  /** 主人私聊消息 → 她自己的经历记忆（platform=pet，私下相处，会遗忘但重要的不丢）。 */
+  _ingestOwnerMemory(chat, entry) {
+    const text = String(entry.text || '').trim();
+    if (!text) return;
+    const card = this._memoryCard();
+    const line = JSON.stringify({
+      at: entry.ts,
+      platform: 'pet',
+      kind: 'private',
+      sender: entry.name || '主人',
+      senderId: String(entry.uid || ''),
+      isOwner: true,
+      isSelf: false,
+      private: true,
+      direct: true,
+      conversationKey: 'pet',
+      text,
+    });
+    const res = memoryCard.ingestInboxLines(card, [line], {}, entry.ts);
+    if (res && (res.added || res.touched)) this._saveMemoryCard();
   }
 
   _now() {
@@ -217,6 +265,14 @@ class Store {
       this._onUserMessage(chat, entry);
       // 关系边：规则即时（「我和小明是同事」这种），不调模型、不建卡
       this._onRelationMention(chat, entry);
+      // 主人的话写进她自己的经历记忆卡（surfcore 衰减记忆，会遗忘）
+      if (message.isOwner === true) {
+        try {
+          this._ingestOwnerMemory(chat, entry);
+        } catch (err) {
+          if (this.logger) this.logger.warn('记忆卡摄取失败（不影响聊天）：' + describeError(err));
+        }
+      }
     }
     // 直接关停/断电也不能把 episode 水位、seenIds、stats 丢在 400ms 防抖里：
     // 原文已经 fsync，这里同步写 meta（每轮 1 次，很小的文件）。
@@ -351,6 +407,19 @@ class Store {
    * 真实 token 比估算多（scale > 1）就按 D/scale 裁剪，别把 prompt 顶爆；
    * 估算偏保守（scale < 1）则多给一点窗口。不能直接改 this.plan，否则不同模型互相污染。
    */
+  /** 渲染她自己的经历记忆卡（≤ memory 分片预算，空卡返回 ''）。 */
+  _renderMemoryCardBlock() {
+    try {
+      const card = this._memoryCard();
+      if (!card || !Array.isArray(card.records) || !card.records.length) return '';
+      const budget = Math.min(this.plan.memory, 1200);
+      return memoryCard.renderMemoryCard(card, { platform: 'qq', maxChars: budget, now: this._now() });
+    } catch (err) {
+      if (this.logger) this.logger.warn('渲染记忆卡失败（本轮不带记忆卡）：' + describeError(err));
+      return '';
+    }
+  }
+
   buildContext({
     key, uid = '', name = '', query = '', now = null, isGroup = false, currentSeq = 0,
     mentionedNames = [], relationsEnabled = undefined, tokenScale = 1,
@@ -424,6 +493,7 @@ class Store {
       relations: relationCtx.edges,
       mentions: relationCtx.mentions,
       summary: chat.summary.text,
+      memoryCardBlock: this._renderMemoryCardBlock(),
       recent: recent.messages,
       recentTokens: recent.tokens,
       summaryTokens: chat.summary.tokens,
@@ -844,6 +914,16 @@ class Store {
       this.chatStore.saveMeta(chat);
     }
     const archived = this.chatStore.archiveIdle(at);
+    // 她自己的经历记忆卡：每天模糊一点不重要的（surfcore 衰减曲线）
+    try {
+      const card = this._memoryCard();
+      if (memoryCard.needsDailyDecay(card, {}, at)) {
+        memoryCard.applyDailyDecay(card, {}, at, { steps: memoryCard.decayDaysBetween(card.lastDecayDate, at) || 1 });
+        this._saveMemoryCard();
+      }
+    } catch (err) {
+      if (this.logger) this.logger.warn('记忆卡衰减失败（不影响聊天）：' + describeError(err));
+    }
     this._syncSessions();
     if (evicted || archived.length) {
       if (this.logger) this.logger.info(`记忆清理：淘汰 ${evicted} 条，归档 ${archived.length} 个聊天`);
