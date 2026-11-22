@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const care = require('./care');
+const carePurpose = require('./carePurpose');
 const time = require('../infra/time');
 const { describeError } = require('../infra/errors');
 const { hotSearch } = require('./weiboPosts');
@@ -60,6 +61,16 @@ async function careForChat(runtime, chatId) {
   }
   if (runtime.llm.isMock) {
     return { ok: true, text: care.pickTemplate(), mock: true, hour };
+  }
+  // 有 Key：优先走 purpose-engine（会从记忆/最近聊天里真的想出点事说，且不重复），
+  // 素材/模型/解析任一环节失败就回退到旧的模板搭话，保证主动搭话永不因这个新链路而哑火。
+  try {
+    const out = await carePurpose.generate(runtime, { chatId });
+    if (out.ok && out.text) {
+      return { ok: true, text: out.text, mock: false, hour, purpose: true };
+    }
+  } catch (err) {
+    runtime.logger?.warn?.('purpose 搭话失败，回退模板：' + describeError(err));
   }
   try {
     let topics = [];

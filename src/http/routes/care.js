@@ -10,6 +10,7 @@
 
 const care = require('../../services/care');
 const { careForChat } = require('../../services/careChat');
+const carePurpose = require('../../services/carePurpose');
 const { errorMessage } = require('../../infra/errors');
 const { json, readBody } = require('../util');
 const { describeError } = require('../../infra/errors');
@@ -74,6 +75,12 @@ module.exports = function register(router) {
       runtime.store.ensureSession(key, { platform: 'wechat', chatType: body.group === true ? 'group' : 'private' });
       if (msgId && runtime.store.isDuplicate(key, msgId)) return json(res, 200, { ok: true, duplicate: true });
       runtime.store.appendMessage(key, { role: 'assistant', name: runtime.config.persona.name, text, ts: Date.now(), ...(msgId ? { msgId } : {}) });
+      // 回执喂给 purpose-engine：记账（不重复/被否定降权/惦记的事待续）后落盘；失败不影响发送记账。
+      try {
+        carePurpose.record(runtime, { outcome: 'sent', text, chatId: chat });
+      } catch (err) {
+        runtime.logger?.warn?.('purpose 回执记账失败：' + describeError(err));
+      }
       return json(res, 200, { ok: true });
     } catch (err) {
       runtime.logger.warn('主动搭话记录失败：' + describeError(err));
