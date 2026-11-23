@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 
 
 'use strict';
@@ -192,6 +192,19 @@ test('「没有哦你重新记一下」交给模型理解，不把「没有哦�
   const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
   assert.ok(written.includes('HyperFrames'), '应记模型返回的内容');
   assert.ok(!written.includes('没有哦你重新'), '不该把修正词当内容');
+});
+
+test('「你还记得吗」「你记了啥」是问不是让记，不写小本本也不回「记好了」', async () => {
+  const memo = path.join(tmp, '小本本疑问');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-ask-chat';
+  await pre('找 codex 调 notion 发我资料', { chatId, overrides });
+  const out = await gen('对了你还记得我之前让你去找codex调用我的notion让他发你关于我的东西你都有记住吗', { chatId, overrides });
+  assert.doesNotMatch(out.output.text || '', /记好了|写进小本本/);
+  assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '询问记忆不该写小本本');
+  const again = await gen('你记了啥这个不是让你记住的我是在问你', { chatId, overrides });
+  assert.doesNotMatch(again.output.text || '', /记好了|写进小本本/);
+  assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '否定澄清也不该写小本本');
 });
 
 test('自己干不了的电脑活儿（剪辑/下载）整句丢给 codex', async () => {

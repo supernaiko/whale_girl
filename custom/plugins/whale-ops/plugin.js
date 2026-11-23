@@ -224,6 +224,18 @@ function parseFileSend(text) {
 
 // 「把这些记一下」「记到小本本」：她自己写进 Documents\小本本
 const MEMO_VERB = /(记一下|记下来|记住|记到小本本|记进小本本|写进小本本|存到小本本|放进小本本|记在小本本|记着)/;
+// 「你还记得吗」「你记了啥」「你记住没」是在问，不是让记；「不是让你记住的」是否定澄清。
+// 这些都不该触发「写进小本本」，要留给模型正常回答。
+function askingRecall(t) {
+  // 疑问句末「吗/啥/什么/没/没有/呢」+ 句子里有「你…记得/记住/记了/记着」
+  if (/(?:吗|没|没有|啥|什么|哪些|呢)\s*[？?]?$/.test(t)
+    && /你[^，。！!？?\n]{0,30}(?:记得|记住|记了|记着)/.test(t)) return true;
+  // 「你记了啥」「你记了什么」
+  if (/(?:你|您|还)\s*(?:记了|记得|记住|记着)\s*(?:啥|什么|哪些|没|没有)/.test(t)) return true;
+  // 「不是让你记住的」「别让我记」是否定澄清
+  if (/(?:不是|别|没让|不是让)\s*(?:你|我)?\s*(?:记|记住)/.test(t)) return true;
+  return false;
+}
 // 自己干不了的电脑活儿，整句丢给 codex
 const CODEX_FALLBACK_VERB = /(剪辑|剪视频|下载|安装|配置|部署|处理|转换|转码|生成|分析|总结|爬虫|爬取|采集|翻译|压缩|解压|合并|拼接|渲染|做视频|做图|写脚本|写程序|写代码|跑脚本|批量|自动化|整理一下|导出)/;
 
@@ -236,7 +248,7 @@ function natural(raw) {
   if (/^(?:电脑|助手|插件)?帮助$/.test(t)) return '帮助';
   // 「把这些记一下」「记到小本本」：她自己写进 Documents\小本本
   const memoHit = t.match(MEMO_VERB);
-  if (memoHit) {
+  if (memoHit && !askingRecall(t)) {
     // 剥掉「我是让你把这些网站」「让你把这个」这类主语，留下真正要记的对象
     const before = t.slice(0, memoHit.index)
       .replace(/^(?:我(?:是)?让你|让你|请你|你|帮我|麻烦你?|请)?\s*(?:把|将)?\s*/, '')
@@ -436,6 +448,7 @@ const COMPUTER_NOUNS = /(表格|xlsx|csv|文档|文件|文件夹|目录|桌面|�
 function relatedToComputer(text) {
   const t = String(text || '').trim();
   if (!t || t.length > 200) return false;
+  if (askingRecall(t)) return false;
   if (/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否)/.test(t)) return false;
   if (!COMPUTER_NOUNS.test(t)) return false;
   // 「什么是 xlsx」「表格怎么用」这类纯提问交给鲸鲸，不要抢
@@ -446,7 +459,7 @@ function looksLikeAction(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   // 记东西不限长度（可能一次贴一大段），先认这个再按长度拦
-  if (/(记一下|记下来|记住|记着|小本本)/.test(t) && !/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否)/.test(t)) return true;
+  if (/(记一下|记下来|记住|记着|小本本)/.test(t) && !/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否)/.test(t) && !askingRecall(t)) return true;
   if (t.length > 200) return false;
   if (/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否)/.test(t)) return false;
   // 句首就是动作词
