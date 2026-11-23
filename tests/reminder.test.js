@@ -53,6 +53,19 @@ test('「十点半提醒我开会」这类说法都能解析', () => {
   }
 });
 
+test('寒暄/铺垫不算提醒内容，取「提醒我」之后的部分', () => {
+  const cases = [
+    ['好来做个测试吧20分钟后提醒我开始学习', '开始学习'],
+    ['别忘了提醒我八点吃药', '吃药'],
+    ['好，20分钟后提醒我喝水', '喝水'],
+  ];
+  for (const [text, what] of cases) {
+    const out = reminder.parseReminder(text, NOW);
+    assert.ok(out, text + ' 应该被识别成提醒');
+    assert.equal(out.what, what, text + ' 的提醒内容');
+  }
+});
+
 test('不是提醒的话不会被误判', () => {
   for (const text of [
     // 没有「什么事」只有「提醒我一下」，交给模型兜底/当普通聊天

@@ -175,7 +175,24 @@ const TAIL_RE = /\s*(记得|哦|啊|呀|嘛|吧|谢谢|谢了|辛苦了)[。.!�
 /** 把「时间 + 提醒我 + 事情」里的事情抽出来 */
 function extractWhat(text) {
   let s = String(text || '').trim();
-  // 先去掉时间短语（相对时间 / 今天明天 / 几点几分 / 上午下午）
+
+  // 强意图词后面直接跟内容；「好来做个测试吧 20分钟后提醒我 开始学习」里的
+  // 「好来做个测试吧」是寒暄/铺垫，不是要提醒的事 → 取「提醒我」之后的部分。
+  // 注意「别忘了提醒我八点吃药」要认「提醒我」而不是前面的「别忘」。
+  const strong = /提醒一下|提醒下|提醒我|叫我/.exec(s);
+  const intent = strong || /别忘记|别忘了|别忘|提醒/.exec(s);
+  if (intent) {
+    let after = s.slice(intent.index + intent[0].length);
+    after = after.replace(REL_RE, '').replace(DAY_RE, '');
+    const clock = parseClockPhrase(after);
+    if (clock) after = after.replace(clock.raw, '');
+    after = after.replace(/(凌晨|早上|早晨|清晨|上午|中午|晌午|下午|午后|傍晚|黄昏|晚上|夜里|今晚|明晚)/g, '');
+    after = after.replace(/^(一下|一声|一句|下)[\s,，。.!！~～]*/, '');
+    after = after.replace(/^[\s,，:：。.!！~～、]+/, '').replace(TAIL_RE, '').replace(/[\s,，:：。.!！~～、]+$/, '');
+    if (after.trim()) return after.trim().slice(0, 200);
+  }
+
+  // 意图词在句末（「明天开会提醒我」）：先去掉时间短语，剩下的就是内容。
   s = s.replace(REL_RE, '').replace(DAY_RE, '');
   const clock = parseClockPhrase(s);
   if (clock) s = s.replace(clock.raw, '');
