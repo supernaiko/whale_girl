@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { decayMood, eventsFromText, applyEvents, moodLabel, bondTier } = require('../plugin.js').__test;
+const { decayMood, eventsFromText, applyEvents, companionBoost, moodLabel, bondTier } = require('../plugin.js').__test;
 
 test('识别夸奖 / 骂人 / 关心 / 撒娇', () => {
   assert.deepEqual(eventsFromText('你真厉害'), ['praise']);
@@ -47,6 +47,16 @@ test('没新鲜事厌倦感缓慢上升', () => {
   const now = Date.now();
   const m = decayMood({ valence: 65, energy: 55, boredom: 15, updatedAt: now - 24 * 3600 * 1000 }, { valence: 65, energy: 55, boredom: 15 }, now);
   assert.ok(m.boredom > 15 && m.boredom <= 100);
+});
+
+test('普通聊天也缓解闷：陪伴本身正向，不用非得被夸', () => {
+  const m = companionBoost({ valence: 55, energy: 50, boredom: 70, why: '' }, { valence: 65, energy: 55, boredom: 15 });
+  assert.ok(m.valence > 55 && m.valence <= 75, 'valence 该升但封顶 75');
+  assert.ok(m.boredom < 70, 'boredom 该降');
+  assert.equal(m.why, '有人陪聊');
+  // 被骂不陪伴，心情不升
+  const insulted = applyEvents({ valence: 55, energy: 50 }, ['insult']);
+  assert.ok(insulted.valence < 55, '被骂不该被陪伴顶回来');
 });
 
 test('亲近档位', () => {

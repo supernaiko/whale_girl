@@ -583,6 +583,40 @@ test('解析器先失败时交给模型兜底', async () => {
     assert.match(out.system, /DSH/);
   });
 
+  test('codex 拉到/写出的文件内容会写进小本本，deep 以后能翻到', async () => {
+    const memo = path.join(tmp, '小本本codex');
+    const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+    const chatId = 'codex-memo-chat';
+    const mdFile = path.join(tmp, 'notion_计划.md');
+    fs.writeFileSync(mdFile, '用户于 2026-10-15 确认正式离职，10-16 为 Day 1，之后启动独立开发。', 'utf8');
+    const logDir = path.join(tmp, '.pluginData', 'codex');
+    fs.rmSync(logDir, { recursive: true, force: true });
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(path.join(logDir, 'run-777.log'), [
+      JSON.stringify({ type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: '已读取 Notion，汇总到 [notion_计划.md](' + mdFile.replace(/\\/g, '/') + ')' } }),
+    ].join('\n'), 'utf8');
+    await gen('用 codex 拉我的 notion 计划', {
+      chatId,
+      overrides,
+      model: async () => JSON.stringify({ action: 'codex', task: '从 Notion 读取计划输出到 ' + mdFile }),
+    });
+    const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
+    assert.ok(written.includes('2026-10-15'), '小本本该含 codex 拉到的文件内容，实得：' + written);
+    assert.ok(written.includes('【Codex 查到】'), '该带 Codex 查到标记');
+  });
+
+  test('主人私聊问到记事本里的事，会把相关内容注入提示词', async () => {
+    const memo = path.join(tmp, '小本本注入');
+    const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+    fs.mkdirSync(memo, { recursive: true });
+    fs.writeFileSync(path.join(memo, '小本本.md'), '- 计划：用户 2026/10/15 正式离职，10-16 启动\n', 'utf8');
+    const c = ctx('那你讲讲我的计划', { overrides });
+    const out = await plugin.hooks['chat.prompt'](c);
+    assert.ok(out && out.system, '该返回注入后的 system');
+    assert.ok(out.system.includes('2026/10/15'), '该把记事本里的计划内容注入');
+    assert.ok(out.system.includes('【你的记事本】'), '该带记事本标记');
+  });
+
   for (const [name, fn] of cases) {
     try {
       await fn();

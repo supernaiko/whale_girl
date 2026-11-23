@@ -103,6 +103,17 @@ function applyEvents(mood, events) {
   return { valence: clamp(valence, 0, 100), energy: clamp(energy, 0, 100), boredom: clamp(boredom, 0, 100), why, updatedAt: Date.now() };
 }
 
+/** 陪伴本身：普通聊天（非骂人）也轻微提升心情、缓解无聊，不用非得被夸才开心 */
+function companionBoost(mood, baseline) {
+  const b = baseline || BASELINE;
+  const v = num(mood.valence, b.valence);
+  if (v < 75) mood.valence = clamp(v + 1, 0, 75);
+  mood.boredom = clamp(num(mood.boredom, b.boredom) - 6, 0, 100);
+  if (!mood.why) mood.why = '有人陪聊';
+  mood.updatedAt = Date.now();
+  return mood;
+}
+
 /** 心情 → 一句人话 */
 function moodLabel(mood) {
   const v = num(mood.valence, BASELINE.valence);
@@ -179,6 +190,8 @@ async function onPreReply(ctx) {
   state.mood = decayMood(state.mood, state.baseline, now);
   const events = eventsFromText(message.text);
   if (events.length) state.mood = applyEvents(state.mood, events);
+  // 陪伴：有人找她说话这件事本身就正向，不用非得被夸/被关心才开心
+  if (!events.includes('insult')) companionBoost(state.mood, state.baseline);
   updatePerson(state, message, events, now);
   if (events.length) { state.historyAt = 0; recordHistory(file, state, now); }
   saveState(file, state);
@@ -239,4 +252,4 @@ module.exports = {
   'timer.tick': async (ctx) => { try { return await onTick(ctx); } catch { return {}; } },
 };
 
-module.exports.__test = { decayMood, eventsFromText, applyEvents, moodLabel, bondTier };
+module.exports.__test = { decayMood, eventsFromText, applyEvents, companionBoost, moodLabel, bondTier };

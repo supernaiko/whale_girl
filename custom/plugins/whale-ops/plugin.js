@@ -750,6 +750,49 @@ async function recallMemo(settings, query) {
   return '小本本里记着这些：\n' + hits.slice(-8).map(line => line.replace(/^-\s*/, '')).join('\n');
 }
 
+// 从 codex 输出里找它写出的 .md/.txt 文件，读回完整内容；读不到就用摘要文本
+function codexResultContent(text, logText) {
+  const src = String(text || '') + '\n' + String(logText || '');
+  const paths = src.match(/[A-Za-z]:[\\/][^\s"'“”‘’<>|，。；：、）()\[\]【】`]+?\.(?:md|txt|json)\b/g) || [];
+  for (const p of paths.slice().reverse()) {
+    try {
+      const full = fs.readFileSync(normalizeCreatedPath(p), 'utf8');
+      if (full && full.length > 40) return full.slice(0, 8000);
+    } catch { /* 文件可能没写出或路径不对，跳过 */ }
+  }
+  return String(text || '').trim();
+}
+
+// codex 拉到的内容写进小本本，让 deep 以后被问到能翻到，而不是凭模糊记忆瞎编日期/状态
+async function rememberCodexResult(settings, content) {
+  const text = String(content || '').trim();
+  if (!text || text.length < 20) return;
+  try {
+    const dir = memoFolder(settings);
+    await fsp.mkdir(dir, { recursive: true });
+    const file = path.join(dir, '小本本.md');
+    const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
+    await fsp.appendFile(file, '- ' + stamp + ' 【Codex 查到】' + text.replace(/\r?\n/g, ' ').slice(0, 4000) + '\n', 'utf8');
+  } catch { /* 不挡 codex 正常回复 */ }
+}
+
+// 主人私聊时，按当前消息关键词检索小本本，命中就注入，让她照实答
+function relevantMemo(settings, query) {
+  const file = path.join(memoFolder(settings), '小本本.md');
+  let lines = [];
+  try {
+    lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(l => l.trim().startsWith('-'));
+  } catch { return ''; }
+  if (!lines.length) return '';
+  // 中文无空格，别整句当关键词；只在提到「计划/离职/性格」这类记忆主题时才翻，用命中的实词去匹配
+  const kw = String(query || '').match(/计划|规划|离职|notion|Notion|性格|目标|复盘|里程碑|约定|协作|档案|资料|笔记|合同|预算|方向|启动|创业|赚钱|项目|复测|路线|简历|画像/) || [];
+  if (!kw.length) return '';
+  const matched = lines.filter(l => kw.some(w => l.includes(w)));
+  if (!matched.length) return '';
+  return '【你的记事本】下面是你之前记下或查到的内容，被问到相关内容时照实回答，别记错日期、状态或细节：\n'
+    + matched.slice(-5).map(l => l.replace(/^-\s*/, '')).join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // xlsx：不依赖 DSH，直接手写一个最小可用的 Excel（单表、内联字符串）
 // ---------------------------------------------------------------------------
@@ -1618,6 +1661,7 @@ async function runCodexJob(ctx, settings, chatId, pending) {
     if (quick.ok) {
       if (text) rememberCreatedFromText(whale, chatId, text);
       if (logText) rememberCreatedFromText(whale, chatId, logText);
+      await rememberCodexResult(settings, codexResultContent(text, logText));
     }
     return { text: quick.ok ? clip('Codex 完成：\n' + (text || '跑完了，但没留下文字结果。')) : quick.message };
   }
@@ -1631,6 +1675,7 @@ async function runCodexJob(ctx, settings, chatId, pending) {
     if (done.ok) {
       if (text) rememberCreatedFromText(whale, chatId, text);
       if (logText) rememberCreatedFromText(whale, chatId, logText);
+      await rememberCodexResult(settings, codexResultContent(text, logText));
     }
     const body = done.ok ? clip('Codex 完成：\n' + (text || '跑完了，但没留下文字结果。')) : done.message;
     await deliver(whale, chatId, body, ctx.message.chatType);
@@ -1659,8 +1704,17 @@ exports.hooks = {
       // 上一轮没送达的异步结果，借这次开口补发。
       flushPending(ctx.whale, message.chatId, message.chatType).catch(() => {});
       const system = typeof ctx.system === 'string' ? ctx.system : '';
-      if (!system || system.includes('【能力事实】')) return {};
-      return { system: system + '\n\n【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务，还能把本机文件当微信附件发出去（「发文件 <绝对路径> 给 <会话>」）。主人说「把文件发我」时，插件会把刚建好的文件直接发到当前会话——不要说「文件发不了」「只能发文字和表情」。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；以前对话里你说过「codex 我调不了」，那是旧版本的旧说法，现在插件已经支持 Codex，别再重复这句话。不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。' };
+      let extra = '';
+      if (!system || !system.includes('【能力事实】')) {
+        extra = '【能力事实】你有电脑助手插件，能在白名单内列目录、读文件、新建文件和文件夹、打开软件，也能调用本机 Codex 和 DSH 跑任务，还能把本机文件当微信附件发出去（「发文件 <绝对路径> 给 <会话>」）。主人说「把文件发我」时，插件会把刚建好的文件直接发到当前会话——不要说「文件发不了」「只能发文字和表情」。被问能不能读文件、能不能用 codex、能不能用 dsh 时照实回答能，让对方给具体路径或要做什么；以前对话里你说过「codex 我调不了」，那是旧版本的旧说法，现在插件已经支持 Codex，别再重复这句话。不要说自己是聊天窗口，也不要说碰不到电脑。做不到时说明是路径或权限限制。';
+      }
+      // 主人私聊：按当前消息检索记事本，命中就注入，让她照实答（别凭模糊记忆瞎编日期/状态）
+      if (message.chatType !== 'group') {
+        const memo = relevantMemo(settings, message.text);
+        if (memo) extra = (extra ? extra + '\n\n' : '') + memo;
+      }
+      if (!extra) return {};
+      return { system: system + '\n\n' + extra };
     } catch {
       return {};
     }
