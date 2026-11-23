@@ -1,0 +1,17 @@
+{
+  "Id": "whale-smart-care",
+  "Name": "点名搭话",
+  "Author": "本地插件",
+  "Version": "1.0.0",
+  "MinAppVersion": "4.1.2",
+  "Description": "按已绑定主人的私聊指令，向联系人发送关心话并回复入队结果。需要完整系统权限。",
+  "ResultLabel": "结果",
+  "Api": 4,
+  "Kind": "message",
+  "Hooks": ["chat.generate"],
+  "Permissions": ["system.full"],
+  "appCompatibility": [
+    { "appEpoch": 1, "minAppVersion": "4.1.2" },
+    { "appEpoch": 2, "minAppVersion": "1.0.0" }
+  ]
+}
