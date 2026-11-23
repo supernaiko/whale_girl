@@ -128,6 +128,23 @@ function parseWhen(text, now = new Date(), timeZone = '') {
     }
   }
 
+  // ①b 倒计时：「计时一分钟」「倒计时 30 秒」「计个时，三分钟」= 从此刻起算相对时长
+  const cd = raw.match(/(?:计时|倒计时|计个时)\s*([零一二两三四五六七八九十\d]{1,3})\s*(秒钟?|分钟|分|个?小时|钟头)/);
+  if (cd) {
+    const n = cnToNumber(cd[1]);
+    if (n !== null && n > 0) {
+      const unit = cd[2];
+      const ms = /秒/.test(unit) ? n * 1000
+        : /小时|钟头/.test(unit) ? n * 3600 * 1000
+          : n * 60 * 1000;
+      if (ms >= 1000 && ms <= 30 * 24 * 3600 * 1000) {
+        const relative = /秒/.test(unit) ? `${n} 秒`
+          : /小时|钟头/.test(unit) ? `${n} 小时` : `${n} 分钟`;
+        return { at: new Date(now.getTime() + ms), rest: raw.replace(cd[0], ''), matched: cd[0], relative };
+      }
+    }
+  }
+
   // ② 绝对时间：今天/明天/后天 + 几点几分
   const dayWord = (raw.match(DAY_RE) || [])[1] || '';
   const clock = parseClockPhrase(raw);
@@ -155,8 +172,9 @@ function parseWhen(text, now = new Date(), timeZone = '') {
 
 // 只认「明确在让她做事」的说法。
 // 以前把「记得 / 到点 / 到时候」也算意图词，于是「我记得明天八点要开会」这种
-// 自言自语被当成设提醒（用户实测踩到过）。现在必须出现 提醒我 / 叫我 / 别忘。
-const INTENT_RE = /(提醒我|提醒一下|提醒下|叫我|别忘)/;
+// 自言自语被当成设提醒（用户实测踩到过）。现在必须出现 提醒我 / 叫我 / 别忘，
+// 或者「计时 / 倒计时」（「帮我计时一分钟」= 一分钟后叫我）。
+const INTENT_RE = /(提醒我|提醒一下|提醒下|叫我|别忘|计时|倒计时)/;
 /** 「他叫我明天八点开会」是在转述，不是让她做提醒 */
 const REPORTED_RE = /(他|她|你|您|朋友|同事|老板|老师|同学|我妈|我爸|家人|别人)\s*叫我/;
 /** 像不像一个「设提醒」的请求（先粗筛，再解析时间） */
@@ -175,6 +193,19 @@ const TAIL_RE = /\s*(记得|哦|啊|呀|嘛|吧|谢谢|谢了|辛苦了)[。.!�
 /** 把「时间 + 提醒我 + 事情」里的事情抽出来 */
 function extractWhat(text) {
   let s = String(text || '').trim();
+
+  // 倒计时：「计时一分钟」= 一分钟后叫我，没有别的事要提醒；
+  // 「计时三分钟提醒我喝水」= 内容是「喝水」。
+  const cd = /(?:计时|倒计时|计个时)/.exec(s);
+  if (cd) {
+    let after = s.slice(cd.index + cd[0].length);
+    after = after.replace(/([零一二两三四五六七八九十\d]{1,3})\s*(秒钟?|分钟|分|个?小时|钟头)\s*(?:之?后|以后)?/, '');
+    after = after.replace(/(?:提醒我|提醒一下|提醒下|叫我|别忘(?:记|了)?)[\s,，。.!！~～]*/g, '');
+    after = after.replace(/^(一下|一声|一句)[\s,，。.!！~～]*/, '');
+    after = after.replace(/^[\s,，:：。.!！~～、]+/, '').replace(TAIL_RE, '').replace(/[\s,，:：。.!！~～、]+$/, '');
+    if (after.trim()) return after.trim().slice(0, 200);
+    return '时间到了';
+  }
 
   // 强意图词后面直接跟内容；「好来做个测试吧 20分钟后提醒我 开始学习」里的
   // 「好来做个测试吧」是寒暄/铺垫，不是要提醒的事 → 取「提醒我」之后的部分。
@@ -215,7 +246,7 @@ function parseReminder(text, now = new Date(), timeZone = '') {
   if (!when) return null;
   const what = extractWhat(text);
   if (!what || what.length < 1) return null;
-  return { at: when.at, what, when: when.matched || '' };
+  return { at: when.at, what, when: when.matched || '', relative: when.relative || '' };
 }
 
 /** 「今天 20:30」/「明天 08:00」这种人话 */
@@ -235,7 +266,13 @@ function describeWhen(at, now = new Date(), timeZone = '') {
 }
 
 /** 设好提醒之后的回执（不经过模型，保证时间和事情都对） */
-function confirmText({ at, what }, { now = new Date(), group = false, who = '', timeZone = '' } = {}) {
+function confirmText(parsed, { now = new Date(), group = false, who = '', timeZone = '' } = {}) {
+  const { at, what, relative } = parsed;
+  // 倒计时显示相对时长（「过 1 分钟 叫你」），不报绝对时钟
+  if (relative) {
+    const action = what === '时间到了' ? '叫你' : `提醒你${what}`;
+    return `好，过 ${relative} ${action}。`;
+  }
   const when = describeWhen(at, now, timeZone);
   const target = group && who ? `到点我会在群里 @${who}` : '到点我在这里提醒你';
   return `好，${when} 提醒你${what}。${target}。`;

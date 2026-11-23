@@ -66,6 +66,21 @@ test('寒暄/铺垫不算提醒内容，取「提醒我」之后的部分', () =
   }
 });
 
+test('「计时/倒计时 X 分钟」触发提醒，内容默认「时间到了」', () => {
+  const cases = [
+    ['帮我计时一分钟', '时间到了'],
+    ['计时三分钟提醒我喝水', '喝水'],
+    ['倒计时30秒', '时间到了'],
+    ['帮我倒计时十分钟', '时间到了'],
+  ];
+  for (const [text, what] of cases) {
+    const out = reminder.parseReminder(text, NOW);
+    assert.ok(out, text + ' 应该被识别成倒计时提醒');
+    assert.equal(out.what, what, text + ' 的提醒内容');
+    assert.ok(out.relative, text + ' 应该有相对时长');
+  }
+});
+
 test('不是提醒的话不会被误判', () => {
   for (const text of [
     // 没有「什么事」只有「提醒我一下」，交给模型兜底/当普通聊天
@@ -96,6 +111,15 @@ test('回执里带时间和事情', () => {
   const text = reminder.confirmText(out, { now: NOW });
   assert.match(text, /明天 08:00/);
   assert.match(text, /带伞/);
+});
+
+test('倒计时回执显示相对时长，不报绝对时钟', () => {
+  const t1 = reminder.confirmText(reminder.parseReminder('帮我计时一分钟', NOW), { now: NOW });
+  assert.match(t1, /过 1 分钟/);
+  assert.match(t1, /叫你/);
+  const t2 = reminder.confirmText(reminder.parseReminder('计时三分钟提醒我喝水', NOW), { now: NOW });
+  assert.match(t2, /过 3 分钟/);
+  assert.match(t2, /喝水/);
 });
 
 /* ---------------- 存储与状态机 ---------------- */
