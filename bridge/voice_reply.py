@@ -84,7 +84,17 @@ def choose(config, incoming, is_group, rng, log=None):
 def spoken_text(bubbles, limit=90):
     # 气泡之间用换行连接：语音按「一句一停顿」朗读，别把几句话糊成一整段。
     text = '\n'.join(str(line).strip() for line in (bubbles or []) if str(line).strip())
-    text = re.sub(r'\[\[sticker:[^\]]{1,20}\]\]', '', text).strip()
+    # 剥掉表情/颜文字/emoji/标签，避免 TTS 把它们念出来（句尾会很怪）。
+    text = re.sub(r'\[\[sticker:[^\]]{1,20}\]\]', '', text)
+    text = re.sub(r'\[[^\]]{1,8}\]', '', text)                                                      # [笑][叹气][喊叫] 等标签
+    text = re.sub(r'[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3\u00A9\u00AE]', '', text)  # emoji
+    text = re.sub(r'[\(（][^\(\)（）\u4e00-\u9fff]{0,16}[\)）]', '', text)                          # 括号内无汉字的颜文字，整段删
+    text = re.sub(r'[^\u4e00-\u9fffA-Za-z0-9\s，。！？、；：""''…—.!?,;:\'"()-]', '', text)        # 残留特殊符号
+    text = re.sub(r'[\(（]\s*[\)）]', '', text)                                                      # 空括号
+    text = re.sub(r'[ \t]{2,}', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return ''
     if len(text) <= limit:
         return text
     cut = text[:limit]

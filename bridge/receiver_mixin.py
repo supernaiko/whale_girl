@@ -864,7 +864,7 @@ class ReceiverMixin:
                 G.log('[voice] stage=decision result=skip reason=reply_too_long chars=%d' % reply_chars)
             elif G.voice_reply.choose(G.voice_reply.settings(G.ROOT), content, is_group, G.random.random, log=G.log):
                 spoken = G.voice_reply.spoken_text(bubbles)
-                if self.send_voice_reply(spoken, target, username):
+                if spoken and self.send_voice_reply(spoken, target, username):
                     if isinstance(data.get('sticker'), dict):
                         self.cancel_reply_sticker(data['sticker'], username)
                     G.log('[delivery] stage=voice result=handled textFallback=false stickerFallback=false reason=voice_may_have_sent')
