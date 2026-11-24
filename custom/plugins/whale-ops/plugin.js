@@ -581,7 +581,7 @@ async function runPlan(ctx, settings, plan) {
     if (action === 'memo') {
       const content = p(plan.content || plan.task || target);
       if (!content) return { text: '要记什么？把内容发给我。' };
-      return { text: await rememberText(settings, content) };
+      return { text: await rememberText(settings, content, ctx.whale) };
     }
 
     if (action === 'recall') {
@@ -744,14 +744,44 @@ function memoFolder(settings) {
   return custom || path.join(os.homedir(), 'Documents', '小本本');
 }
 
-async function rememberText(settings, content) {
+// 小本本分类表：让 deep 判断这条内容记到哪个分类文件，方便按名字/日期找
+const MEMO_CATEGORIES = ['账号密码', '服务器', '计划日程', '联系信息', '备忘', '杂记'];
+
+function sanitizeMemoFile(name) {
+  const n = String(name || '').replace(/[\\/:*?"<>|\r\n\t]/g, '').trim().slice(0, 12);
+  return n || '杂记';
+}
+
+// 让 deep 判断这条内容属于哪一类（记到哪个 .md）
+async function classifyMemo(whale, content) {
+  if (typeof whale !== 'object' || whale == null || typeof whale.model !== 'function') return '杂记';
+  const system = '你是记事本分类助手。判断这条内容属于哪一类，只输出 JSON：{"category":"分类名"}。' +
+    '分类只能从：账号密码、服务器、计划日程、联系信息、备忘、杂记 里选一个——' +
+    '账号/密码/登录/密钥/token 选「账号密码」；服务器/域名/网站/控制台/VPS/部署 选「服务器」；' +
+    '计划/日程/待办/目标/里程碑/安排 选「计划日程」；电话/地址/邮箱/联系方式 选「联系信息」；' +
+    '其他零散的日常小事选「备忘」；实在归不进去选「杂记」。不要解释、不要 markdown。';
+  try {
+    const out = await whale.model({ system, turns: [{ role: 'user', content: String(content).slice(0, 2000) }], maxTokens: 200 });
+    const raw = typeof out === 'string' ? out : (out && (out.text || out.content)) || '';
+    const m = String(raw).match(/\{[\s\S]*\}/);
+    if (m) {
+      const j = JSON.parse(m[0]);
+      const c = String(j && j.category || '').trim();
+      if (MEMO_CATEGORIES.includes(c)) return c;
+    }
+  } catch { /* 分类失败回退杂记 */ }
+  return '杂记';
+}
+
+async function rememberText(settings, content, whale) {
   const text = String(content || '').trim();
   if (!text) return '要记什么？把内容说给我，我写进小本本。';
   const dir = await resolveSafe(settings, memoFolder(settings), { allowMissing: true });
   if (!dir) return '小本本不在允许的目录里，建不了：' + memoFolder(settings);
   try {
     await fsp.mkdir(dir, { recursive: true });
-    const file = path.join(dir, '小本本.md');
+    const category = await classifyMemo(whale, text);
+    const file = path.join(dir, sanitizeMemoFile(category) + '.md');
     const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
     await fsp.appendFile(file, '- ' + stamp + ' ' + text.replace(/\r?\n/g, ' ') + '\n', 'utf8');
     return '记好了，写进 ' + file + ' 了。（' + text.length + ' 字）';
@@ -761,20 +791,39 @@ async function rememberText(settings, content) {
 }
 
 async function recallMemo(settings, query) {
-  const file = path.join(memoFolder(settings), '小本本.md');
-  let lines = [];
+  const dir = memoFolder(settings);
+  let files = [];
   try {
-    lines = (await fsp.readFile(file, 'utf8')).split(/\r?\n/).filter(line => line.trim().startsWith('-'));
+    files = (await fsp.readdir(dir)).filter(f => f.endsWith('.md') && !f.startsWith('_'));
   } catch { /* 还没记过 */ }
-  if (!lines.length) return '小本本还是空的，还没记过东西。';
+  if (!files.length) return '小本本还是空的，还没记过东西。';
   const words = String(query || '').replace(/^回忆\s*/, '').split(/[\s，,。！？!?]+/)
     .filter(word => word.length > 1 && !/(小本本|之前|让你|记的|记得|什么|哪些|东西|事情|里边?)/.test(word));
-  let hits = lines;
-  if (words.length) {
-    const matched = lines.filter(line => words.some(word => line.includes(word)));
-    if (matched.length) hits = matched;
+  const results = [];
+  for (const f of files.sort()) {
+    let lines = [];
+    try {
+      lines = (await fsp.readFile(path.join(dir, f), 'utf8')).split(/\r?\n/).filter(l => l.trim().startsWith('-'));
+    } catch { continue; }
+    if (!lines.length) continue;
+    let hits = lines;
+    if (words.length) {
+      const nameHit = words.some(w => f.includes(w));
+      if (!nameHit) {
+        const matched = lines.filter(line => words.some(w => line.includes(w)));
+        if (!matched.length) continue;
+        hits = matched;
+      }
+    }
+    results.push({ name: f.replace(/\.md$/, ''), hits });
   }
-  return '小本本里记着这些：\n' + hits.slice(-8).map(line => line.replace(/^-\s*/, '')).join('\n');
+  if (!results.length) return '小本本里没找到相关的内容。';
+  const out = [];
+  for (const r of results) {
+    out.push('【' + r.name + '】');
+    for (const line of r.hits.slice(-6)) out.push(line.replace(/^-\s*/, ''));
+  }
+  return '小本本里记着这些：\n' + out.join('\n');
 }
 
 // 从 codex 输出里找它写出的 .md/.txt 文件，读回完整内容；读不到就用摘要文本
@@ -790,31 +839,40 @@ function codexResultContent(text, logText) {
   return String(text || '').trim();
 }
 
-// codex 拉到的内容写进小本本，让 deep 以后被问到能翻到，而不是凭模糊记忆瞎编日期/状态
+// codex 拉到的内容写进小本本「资料」分类文件，让 deep 以后被问到能翻到，而不是凭模糊记忆瞎编日期/状态
 async function rememberCodexResult(settings, content) {
   const text = String(content || '').trim();
   if (!text || text.length < 20) return;
   try {
     const dir = memoFolder(settings);
     await fsp.mkdir(dir, { recursive: true });
-    const file = path.join(dir, '小本本.md');
+    const file = path.join(dir, '资料.md');
     const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
     await fsp.appendFile(file, '- ' + stamp + ' 【Codex 查到】' + text.replace(/\r?\n/g, ' ').slice(0, 4000) + '\n', 'utf8');
   } catch { /* 不挡 codex 正常回复 */ }
 }
 
-// 主人私聊时，按当前消息关键词检索小本本，命中就注入，让她照实答
+// 主人私聊时，按当前消息关键词检索小本本所有分类文件，命中就注入，让她照实答
 function relevantMemo(settings, query) {
-  const file = path.join(memoFolder(settings), '小本本.md');
-  let lines = [];
+  const dir = memoFolder(settings);
+  let files = [];
   try {
-    lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(l => l.trim().startsWith('-'));
+    files = fs.readdirSync(dir).filter(f => f.endsWith('.md') && !f.startsWith('_'));
   } catch { return ''; }
-  if (!lines.length) return '';
-  // 中文无空格，别整句当关键词；只在提到「计划/离职/性格」这类记忆主题时才翻，用命中的实词去匹配
-  const kw = String(query || '').match(/计划|规划|离职|notion|Notion|性格|目标|复盘|里程碑|约定|协作|档案|资料|笔记|合同|预算|方向|启动|创业|赚钱|项目|复测|路线|简历|画像/) || [];
+  if (!files.length) return '';
+  // 中文无空格，别整句当关键词；只在提到「计划/离职/账号/服务器」这类记忆主题时才翻，用命中的实词去匹配
+  const kw = String(query || '').match(/计划|规划|离职|notion|Notion|性格|目标|复盘|里程碑|约定|协作|档案|资料|笔记|合同|预算|方向|启动|创业|赚钱|项目|复测|路线|简历|画像|账号|密码|服务器|网站|域名|电话|地址|邮箱/) || [];
   if (!kw.length) return '';
-  const matched = lines.filter(l => kw.some(w => l.includes(w)));
+  const matched = [];
+  for (const f of files.sort()) {
+    let lines = [];
+    try {
+      lines = fs.readFileSync(path.join(dir, f), 'utf8').split(/\r?\n/).filter(l => l.trim().startsWith('-'));
+    } catch { continue; }
+    for (const l of lines) {
+      if (kw.some(w => l.includes(w))) matched.push(l);
+    }
+  }
   if (!matched.length) return '';
   return '【你的记事本】下面是你之前记下或查到的内容，被问到相关内容时照实回答，别记错日期、状态或细节：\n'
     + matched.slice(-5).map(l => l.replace(/^-\s*/, '')).join('\n');
@@ -1410,7 +1468,7 @@ async function dispatch(ctx, settings, state) {
   if (memoHit) {
     const content = await memoContent(whale, chatId, message.text, memoHit[1]);
     if (!content) return { text: '要记什么？把内容发给我（比如「记一下：我的生日是 X 月 X 日」），或者先发要记的东西、再跟我说「把这些记一下」，我写进小本本。' };
-    return { text: await rememberText(settings, content) };
+    return { text: await rememberText(settings, content, whale) };
   }
   const recallHit = body.match(/^回忆\s*([\s\S]*)$/);
   if (recallHit) return { text: await recallMemo(settings, recallHit[1]) };
