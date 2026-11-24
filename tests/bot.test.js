@@ -246,6 +246,18 @@ test('长回复会被拆成两条气泡（群聊更短）', async () => {
   cleanup();
 });
 
+test('多要点列表回复不被气泡上限腰斩，每个要点完整发出', () => {
+  const listText = '计划是这几个：\n1. 长期方向：做一个能赚钱的项目。\n2. 收入目标：月入四千左右。\n3. 止损线：年末还没可持续就回头考虑就业。\n4. 预算：全年试错七千到八千。';
+  const { bot, cleanup } = makeBot({ config: makeConfig({ chat: { privateMaxChars: 40, maxBubbles: 2 } }) });
+  const decision = { action: 'reply', key: 'web:x', msg: { chatType: 'private', discussion: false, text: '原消息' } };
+  const bubbles = bot.finalize(decision, listText);
+  // 5 行列表 → 按行数放宽气泡（5 条），而不是被 maxBubbles=2 压成腰斩
+  assert.ok(bubbles.length >= 4, '该按行数放宽气泡，实得 ' + bubbles.length + ' 条：' + JSON.stringify(bubbles));
+  const joined = bubbles.join('\n');
+  assert.ok(joined.includes('止损线') && joined.includes('预算'), '内容该完整，别断在中间：' + joined);
+  cleanup();
+});
+
 test('冷却时间内的主动接话会被跳过，@ 她可以突破冷却', async () => {
   const config = makeConfig({ group: { freeChat: true, freeChatChance: 1, cooldownSec: 600, requireAt: true } });
   const rng = () => 0; // 概率必中

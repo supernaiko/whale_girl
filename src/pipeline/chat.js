@@ -1978,8 +1978,13 @@ class Bot {
     const maxChars = msg.discussion
       ? Math.min(normalMaxChars, Math.max(20, Number(this.config.chat.discussionMaxChars) || LIMITS.maxOutputDiscussion))
       : normalMaxChars;
-    // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大。
-    if (!decision.diaryExpanded && Array.from(text).length > maxChars) {
+    // 多要点列表（换行分隔的 3~12 行）别被气泡上限和字数腰斩：按行数放宽气泡数，
+    // 让每个要点完整发出去，而不是发到一半断掉。
+    const listLines = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
+    const isList = !decision.diaryExpanded && listLines.length > 2 && listLines.length <= 12;
+    const bubbleCap = isList ? Math.min(8, listLines.length) : maxBubbles;
+    // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大；列表除外（交给 splitBubbles 按行拆）。
+    if (!decision.diaryExpanded && !isList && Array.from(text).length > maxChars) {
       text = Array.from(text).slice(0, maxChars - 1).join('').trimEnd() + '…';
       decision.finalText = text;
     }
@@ -2001,7 +2006,7 @@ class Bot {
           .filter(Boolean);
       }
     } else {
-      bubbles = persona.splitBubbles(text, { maxChars, maxBubbles, preferSeparate });
+      bubbles = persona.splitBubbles(text, { maxChars, maxBubbles: bubbleCap, preferSeparate });
       if (decision.action === 'reply') {
         bubbles = bubbles.map((b) => b.replace(/[~～]+$/g, '').replace(/[。！!…]+$/g, '')).filter(Boolean);
       }
@@ -2024,11 +2029,11 @@ class Bot {
       extra = kao || tone;
     }
     // 表情在正文截断后追加，必须连同合并时的空格一起占用整轮字数。
-    const extraChars = Array.from(extra).length + (bubbles.length >= maxBubbles ? 1 : 0);
+    const extraChars = Array.from(extra).length + (bubbles.length >= bubbleCap ? 1 : 0);
     const replyChars = bubbles.reduce((count, bubble) => count + Array.from(bubble).length, 0);
     if (extra && replyChars + extraChars <= maxChars) {
-      // 遵守 maxBubbles：气泡已经满了就并到最后一条，别偷偷多发一条
-      if (bubbles.length < maxBubbles) bubbles.push(extra);
+      // 遵守气泡上限：气泡已经满了就并到最后一条，别偷偷多发一条
+      if (bubbles.length < bubbleCap) bubbles.push(extra);
       else if (bubbles.length) bubbles[bubbles.length - 1] = (bubbles[bubbles.length - 1] + ' ' + extra).trim();
     }
     return bubbles;
