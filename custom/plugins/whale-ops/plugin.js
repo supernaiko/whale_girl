@@ -340,10 +340,8 @@ function natural(raw) {
   // 「交给/让/用 <第三方> 处理/做/办」是转交语义：只有目标是 codex 才归我管，
   // 交给 deep/ds/别人 一律放行（那是主模型或别的事，不是本插件的活）。
   if (/(?:交给|转交|丢给|让|用)\s*[^\s，,。！!？?]{0,20}\s*(?:处理|负责|搞定|做|办)/.test(t) && !/codex/i.test(t)) return null;
-  // 电脑上的活儿它自己干不了（剪辑/下载/装东西/跑脚本…），整句丢给 codex
-  if (CODEX_FALLBACK_VERB.test(t) && !/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否|什么是|多少钱|收费|免费)/.test(t) && t.length <= 200) {
-    return 'codex ' + t;
-  }
+  // 其余「疑似电脑活儿」（剪辑/下载/生成/分析…）不再由正则整句兜底丢给 codex——
+  // 交给 generate 阶段的模型意图判断（planWithModel），模型说 noop 就是闲聊。
   return null;
 }
 
@@ -483,8 +481,12 @@ async function planWithModel(whale, text, settings) {
     '你是 Windows 电脑操作助手。把用户一句话变成一步操作，只输出一个 JSON 对象，不要解释、不要 markdown。',
     'action 取值与参数：',
     'list{path}；read{path}；find{name,path}；create{path,content}；mkdir{path}；',
-    'copy{path,to}；move{path,to}；delete{path}；rename{path,name}；open{name}；codex{task,cwd}。',
-    '凡是要动手做事——建文件、写文档、做 PPT/Excel、改项目、跑脚本——一律用 codex，task 写清完整路径和内容。',
+    'copy{path,to}；move{path,to}；delete{path}；rename{path,name}；open{name}；codex{task,cwd}；',
+    'memo{content}；send_file{path}；recall。',
+    'memo：记到小本本，content 只写要记的内容本身（剥掉「记一下/帮我/把/记住」这些指令词）；用户在问「你记住了吗/你没记住啊」是反问不是让记，输出 noop。',
+    'send_file：把文件发到当前微信会话，path 用刚建好的文件绝对路径；只在用户说「把文件发我/发过来/发给我」时用。',
+    'recall：用户问「小本本里记了什么/我之前让你记了什么」时回忆记事本。',
+    '凡是要动手做事——建文件、写文档、做 PPT/Excel、改项目、跑脚本、剪辑、下载、生成、分析——一律用 codex，task 写清完整路径和内容。',
     '只有用户明确说「用 dsh」「让 dsh」「交给 dsh」时才用 dsh；其它情况绝不用 dsh。',
     'path 一律绝对路径，可用 C:\\Users\\1 作为用户目录；用户说“桌面/下载/文档”就展开成 C:\\Users\\1\\Desktop 等。',
     'delete 是删除到回收站。不确定用户是否要操作电脑、或只是闲聊，输出 {"action":"noop"}。',
@@ -574,6 +576,26 @@ async function runPlan(ctx, settings, plan) {
       if (!within(settings.roots, dest)) return { text: '目标不在允许范围。' };
       await fsp.rename(src, dest);
       return { text: '已改名：' + dest };
+    }
+
+    if (action === 'memo') {
+      const content = p(plan.content || plan.task || target);
+      if (!content) return { text: '要记什么？把内容发给我。' };
+      return { text: await rememberText(settings, content) };
+    }
+
+    if (action === 'recall') {
+      return { text: await recallMemo(settings, '') };
+    }
+
+    if (action === 'send_file') {
+      if (!ctx.message || ctx.message.platform !== 'wechat') return { text: '请在微信会话里发起文件发送。' };
+      const last = recallCreated(ctx.whale, chatId);
+      if (!last) return { text: '没找到刚建好的文件。可以说「发文件 <绝对路径> 给 我」，或者先让我建一个。' };
+      const checkedLast = await fileForSend(settings, last);
+      if (checkedLast.error) return { text: checkedLast.error };
+      return runConfirmed(ctx, settings, chatId, { kind: 'send-file', label: '把刚建好的文件发到这个会话',
+        at: Date.now(), file: checkedLast.file, fingerprint: checkedLast.fingerprint, target: chatId, senderId: (ctx.message || {}).senderId });
     }
 
     if (action === 'codex') {

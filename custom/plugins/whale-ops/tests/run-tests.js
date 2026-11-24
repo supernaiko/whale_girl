@@ -207,14 +207,26 @@ test('「你还记得吗」「你记了啥」是问不是让记，不写小本�
   assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '否定澄清也不该写小本本');
 });
 
-test('自己干不了的电脑活儿（剪辑/下载）整句丢给 codex', async () => {
+test('自己干不了的电脑活儿（剪辑/下载）由模型判断意图后丢给 codex', async () => {
   const overrides = { prefix: '', roots: [tmp] };
   const taskFile = path.join(tmp, 'codex-task-fallback.txt');
   process.env.STUB_TASK_FILE = taskFile;
-  const out = await gen('帮我剪辑这段视频，把开头剪掉三秒', { chatId: 'codex-fallback-chat', overrides });
+  const out = await gen('帮我剪辑这段视频，把开头剪掉三秒', {
+    chatId: 'codex-fallback-chat',
+    overrides,
+    model: async () => JSON.stringify({ action: 'codex', task: '剪辑视频：把开头剪掉三秒', cwd: tmp }),
+  });
   assert.doesNotMatch(out.output.text || '', /没听懂|回「确认」/);
   const stub = fs.readFileSync(taskFile, 'utf8');
   assert.match(stub, /剪掉三秒|剪辑/);
+});
+
+test('「帮你剪辑视频」没模型接时（如模型不可用）不抢话', async () => {
+  const taskFile = path.join(tmp, 'codex-fallback-nomodel.txt');
+  process.env.STUB_TASK_FILE = taskFile;
+  const out = await gen('帮我剪辑这段视频', { chatId: 'codex-fallback-nomodel-chat', overrides: { prefix: '', roots: [tmp] } });
+  assert.ok(!fs.existsSync(taskFile), '模型不可用时不 spawn codex');
+  assert.strictEqual(out.output.text || '', '');
 });
 
 test('「你没记住啊」是否定/反问，不写小本本也不当指令', async () => {
