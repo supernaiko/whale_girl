@@ -176,14 +176,16 @@ function buildImagePrompt({ scene, character, outFile, frontView = false, view =
   let mode = view;
   if (!mode || mode === 'auto') {
     if (/出去玩|旅行|景点|海边|爬山|逛街|打卡|拍照/.test(text)) mode = 'thirdPerson';
-    else if (/自拍|对着镜头|正脸|脸/.test(text)) mode = 'selfie';
+    else if (/自拍|对着镜头|正脸|脸|换衣|换装|试衣|试穿|穿搭|试衣间/.test(text)) mode = 'selfie';
     else mode = 'firstPerson';   // 默认手机在自己手里拍眼前，只有明确“自拍/对着镜头”才走 selfie
   }
-  // 用户偏好：对镜自拍更真实、看着舒服，约三成成品走对镜自拍。
-  const mirror = mode !== 'thirdPerson' && Math.random() < 0.32;
+  // 对镜自拍只在「换装/穿搭/自拍」类场景触发，地点固定在家里卫生间（浴室镜子），更真实；
+  // 拍吃的、街景、美甲这类就拍主体本身，别无脑对镜。
+  const mirrorScene = /换衣|换装|试衣|试穿|穿搭|今天穿|新衣服|衣服|自拍|对镜|镜子/.test(text);
+  const mirror = mode !== 'thirdPerson' && mirrorScene && Math.random() < 0.6;
   if (mirror) mode = 'selfie';
   const mirrorLine = mirror
-    ? '这张拍成对镜自拍：她站在镜子前（洗手台镜、穿衣镜或电梯镜都行），手机举在胸前入镜、挡住脸或露半张脸，镜子里能看到身后的房间/墙/灯，自然的日常抓拍，不要摆拍。'
+    ? '这张拍成卫生间里的对镜自拍：她站在家里卫生间/浴室的镜子前（洗手台镜），镜子上方有灯，手机举在胸前或脸侧入镜、挡住脸或露半张脸，镜子里能看到身后的瓷砖墙、毛巾、洗手台，自然的日常抓拍，不要摆拍。'
     : '';
   const viewRule = (character && character.viewRules && character.viewRules[mode]) || '';
   let personLine = '画面里的人（每次都必须是同一个人，长相身材不要变）：' + who;
