@@ -234,6 +234,8 @@ function askingRecall(t) {
   if (/(?:你|您|还)\s*(?:记了|记得|记住|记着)\s*(?:啥|什么|哪些|没|没有)/.test(t)) return true;
   // 「不是让你记住的」「别让我记」是否定澄清
   if (/(?:不是|别|没让|不是让)\s*(?:你|我)?\s*(?:记|记住)/.test(t)) return true;
+  // 「你没记住啊」「你还没记住吗」「你压根没记住」：否定/反问，是在说“你没记住”，不是让记
+  if (/你\s*(?:还|都|又|才|压根|根本)?\s*(?:没|不|别)\s*(?:记住|记得|记了|记着)/.test(t)) return true;
   return false;
 }
 // 自己干不了的电脑活儿，整句丢给 codex
@@ -335,6 +337,9 @@ function natural(raw) {
     return '看看 ' + (pathHit || rest.replace(/^(列一下|列出|看看|看下|查看)\s*/, '').replace(/(里面|里)?(有什么|有哪些)[？?]?$/, '').trim());
   }
   if (pathHit) return '看看 ' + pathHit;
+  // 「交给/让/用 <第三方> 处理/做/办」是转交语义：只有目标是 codex 才归我管，
+  // 交给 deep/ds/别人 一律放行（那是主模型或别的事，不是本插件的活）。
+  if (/(?:交给|转交|丢给|让|用)\s*[^\s，,。！!？?]{0,20}\s*(?:处理|负责|搞定|做|办)/.test(t) && !/codex/i.test(t)) return null;
   // 电脑上的活儿它自己干不了（剪辑/下载/装东西/跑脚本…），整句丢给 codex
   if (CODEX_FALLBACK_VERB.test(t) && !/^(怎么|为什么|如何|什么|哪|是不是|可以吗|能不能|可不可以|会不会|能否|什么是|多少钱|收费|免费)/.test(t) && t.length <= 200) {
     return 'codex ' + t;

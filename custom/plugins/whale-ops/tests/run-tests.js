@@ -217,6 +217,26 @@ test('自己干不了的电脑活儿（剪辑/下载）整句丢给 codex', asyn
   assert.match(stub, /剪掉三秒|剪辑/);
 });
 
+test('「你没记住啊」是否定/反问，不写小本本也不当指令', async () => {
+  const memo = path.join(tmp, '小本本没记住');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-neg-chat';
+  const p = await pre('话说你没记住啊', { chatId, overrides });
+  assert.strictEqual(p.action, 'pass');
+  const out = await gen('话说你没记住啊', { chatId, overrides });
+  assert.doesNotMatch(out.output.text || '', /记好了|写进小本本/);
+  assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '反问不该写小本本');
+});
+
+test('「你把信息交给deep处理」是转交，不当 codex 任务', async () => {
+  const taskFile = path.join(tmp, 'codex-handoff-task.txt');
+  process.env.STUB_TASK_FILE = taskFile;
+  const overrides = { prefix: '', roots: [tmp] };
+  const out = await gen('你把信息交给deep处理', { chatId: 'codex-handoff-chat', overrides });
+  assert.ok(!fs.existsSync(taskFile), '转交给 deep 不该 spawn codex');
+  assert.doesNotMatch(out.output.text || '', /Codex|codex/);
+});
+
 // ---- 触发与作用域 ----
 
 test('普通聊天不抢话：pre_reply 返回 pass', async () => {
