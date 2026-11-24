@@ -258,6 +258,18 @@ test('多要点列表回复不被气泡上限腰斩，每个要点完整发出',
   cleanup();
 });
 
+test('模型标记 [[full]] 的完整输出不被字数/气泡腰斩，且标记本身不发出去', () => {
+  const fullText = '计划如下：\n1. 长期方向\n2. 收入目标\n3. 止损线\n4. 预算\n5. 节点\n[[full]]';
+  const { bot, cleanup } = makeBot({ config: makeConfig({ chat: { privateMaxChars: 20, maxBubbles: 2 } }) });
+  const decision = { action: 'reply', key: 'web:x', msg: { chatType: 'private', discussion: false, text: '原消息' } };
+  const bubbles = bot.finalize(decision, fullText);
+  const joined = bubbles.join('\n');
+  assert.ok(!joined.includes('[[full]]'), '标记不该发出去：' + joined);
+  assert.ok(joined.includes('预算') && joined.includes('节点'), '内容该完整，别腰斩：' + joined);
+  assert.ok(bubbles.length > 2, '气泡该放宽，实得 ' + bubbles.length + ' 条：' + JSON.stringify(bubbles));
+  cleanup();
+});
+
 test('冷却时间内的主动接话会被跳过，@ 她可以突破冷却', async () => {
   const config = makeConfig({ group: { freeChat: true, freeChatChance: 1, cooldownSec: 600, requireAt: true } });
   const rng = () => 0; // 概率必中

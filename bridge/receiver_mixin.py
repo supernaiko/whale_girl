@@ -851,12 +851,17 @@ class ReceiverMixin:
                 if G.STICKER_TEST_ON and isinstance(sticker, dict):
                     self.claim_and_send_sticker(sticker, expected_chat=target, expected_username=username)
                 return
-            G.log('[delivery] stage=reply chatType=%s bubbles=%d chars=%d' % ('group' if is_group else 'private', len(bubbles), sum((len(x or '') for x in bubbles))))
+            reply_chars = sum((len(x or '') for x in bubbles))
+            G.log('[delivery] stage=reply chatType=%s bubbles=%d chars=%d' % ('group' if is_group else 'private', len(bubbles), reply_chars))
             first = True
             if data.get('error') or data.get('commandType'):
                 G.log('[voice] stage=decision result=skip reason=error_or_command_reply')
             elif data.get('separateText'):
                 G.log('[voice] stage=decision result=skip reason=separate_text_requested')
+            elif reply_chars > 150:
+                # 长回复（任务/计划/说明类）不适合塞进一条语音：语音适合短句，
+                # 超过 150 字直接走文字，别让 TTS 把一大段计划念成一坨。
+                G.log('[voice] stage=decision result=skip reason=reply_too_long chars=%d' % reply_chars)
             elif G.voice_reply.choose(G.voice_reply.settings(G.ROOT), content, is_group, G.random.random, log=G.log):
                 spoken = G.voice_reply.spoken_text(bubbles)
                 if self.send_voice_reply(spoken, target, username):

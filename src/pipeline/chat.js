@@ -1978,12 +1978,20 @@ class Bot {
     const maxChars = msg.discussion
       ? Math.min(normalMaxChars, Math.max(20, Number(this.config.chat.discussionMaxChars) || LIMITS.maxOutputDiscussion))
       : normalMaxChars;
+    // 模型自标记「需要完整输出」的任务/计划/清单类内容（末尾一行 [[full]]）：
+    // 这类内容不受闲聊字数/气泡上限，完整发出去；标记本身不发到微信。
+    const fullMarker = /\[\[full\]\]/;
+    const wantsFull = fullMarker.test(String(text || ''));
+    if (wantsFull) {
+      text = String(text || '').replace(fullMarker, '').trim();
+      decision.finalText = text;
+    }
     // 多要点列表（换行分隔的 3~12 行）别被气泡上限和字数腰斩：按行数放宽气泡数，
     // 让每个要点完整发出去，而不是发到一半断掉。
     const listLines = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
-    const isList = !decision.diaryExpanded && listLines.length > 2 && listLines.length <= 12;
-    const bubbleCap = isList ? Math.min(8, listLines.length) : maxBubbles;
-    // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大；列表除外（交给 splitBubbles 按行拆）。
+    const isList = !decision.diaryExpanded && (wantsFull || (listLines.length > 2 && listLines.length <= 12));
+    const bubbleCap = isList ? 8 : maxBubbles;
+    // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大；列表/全文标记除外（交给 splitBubbles 按行拆）。
     if (!decision.diaryExpanded && !isList && Array.from(text).length > maxChars) {
       text = Array.from(text).slice(0, maxChars - 1).join('').trimEnd() + '…';
       decision.finalText = text;
