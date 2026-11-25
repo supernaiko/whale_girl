@@ -141,9 +141,49 @@ test('日常说「把这些记一下」会写进小本本，问的时候能翻�
   const overrides = { prefix: '', roots: [tmp], memoDir: memo };
   const out = await gen('把这些记一下：周六去看展，门票在邮箱里', { chatId: 'memo-chat', overrides });
   assert.match(out.output.text || '', /记好了/);
-  assert.ok(fs.readFileSync(path.join(memo, '小本本.md'), 'utf8').includes('周六去看展'));
+  assert.ok(fs.readFileSync(path.join(memo, '杂记.md'), 'utf8').includes('周六去看展'));
   const again = await gen('小本本里记了什么', { chatId: 'memo-chat', overrides });
   assert.match(again.output.text || '', /周六去看展/);
+});
+
+test('记小本本按内容分类分文件，不再堆一个文件', async () => {
+  const memo = path.join(tmp, '小本本分类写');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-cat-chat';
+  await gen('记一下：账号 hei_721158 密码 j8xsza', {
+    chatId, overrides,
+    model: async ({ system }) => String(system || '').includes('记到哪个文件')
+      ? JSON.stringify({ file: '账号密码', block: '- 账号：hei_721158 密码：j8xsza' })
+      : JSON.stringify({ text: '账号 hei_721158 密码 j8xsza' }),
+  });
+  const file = path.join(memo, '账号密码.md');
+  assert.ok(fs.existsSync(file), '应按分类写到账号密码.md，实得目录：' + fs.readdirSync(memo).join(','));
+  assert.ok(fs.readFileSync(file, 'utf8').includes('hei_721158'));
+  assert.ok(!fs.existsSync(path.join(memo, '小本本.md')), '不该再堆在小本本.md 一个文件里');
+  const again = await gen('小本本里记了什么', { chatId, overrides });
+  assert.match(again.output.text || '', /账号密码/);
+  assert.match(again.output.text || '', /hei_721158/);
+});
+
+test('用户说「不要和别的放一起」时单独建文件，分类要求本身不写进内容', async () => {
+  const memo = path.join(tmp, '小本本分开');
+  const overrides = { prefix: '', roots: [tmp], memoDir: memo };
+  const chatId = 'memo-separate-chat';
+  const out = await gen('帮我记一下：a.com b.com c.com（这些不要和别的网站放一起，单独一个文件）', {
+    chatId, overrides,
+    model: async ({ system }) => String(system || '').includes('记到哪个文件')
+      ? JSON.stringify({ file: '成人网站', block: '## 网站列表\n- https://a.com\n- https://b.com\n- https://c.com' })
+      : JSON.stringify({ text: 'a.com b.com c.com' }),
+  });
+  assert.match(out.output.text || '', /记好了/);
+  const file = path.join(memo, '成人网站.md');
+  assert.ok(fs.existsSync(file), '应按 deep 给的名字单独建文件，实得：' + fs.readdirSync(memo).join(','));
+  const body = fs.readFileSync(file, 'utf8');
+  assert.ok(body.startsWith('# 成人网站'), '新文件该带标题');
+  assert.ok(body.includes('## 网站列表'), '该按 deep 给的格式写');
+  assert.ok(body.includes('https://a.com'));
+  assert.ok(!body.includes('不要和别的网站放一起'), '分类要求本身不该写进内容');
+  assert.ok(body.includes('https://c.com'));
 });
 
 test('「我是让你把这些网站记在小本本里」不会再写成单个「里」', async () => {
@@ -154,7 +194,7 @@ test('「我是让你把这些网站记在小本本里」不会再写成单个�
   await pre('GitHub Skills 十条：HyperFrames 生成动效视频；video-use 剪视频；Remotion 批量做视频；ffmpeg 万能剪辑；agent-caption 自动字幕。', { chatId, overrides });
   const out = await gen('我是让你把这些网站记在小本本里', { chatId, overrides });
   assert.match(out.output.text || '', /记好了/);
-  const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
+  const written = fs.readFileSync(path.join(memo, '杂记.md'), 'utf8');
   assert.ok(written.includes('HyperFrames'), '应把上一段内容记进去');
   assert.ok(!/^\s*-\s*[^ ]*里\s*$/.test(written), '不该只记一个「里」');
 });
@@ -181,7 +221,9 @@ test('「没有哦你重新记一下」交给模型理解，不把「没有哦�
   await pre('十个视频工具：HyperFrames 做动效视频；video-use 剪视频。', { chatId, overrides });
   const out = await gen('没有哦你重新记一下', {
     chatId, overrides,
-    model: async ({ turns }) => {
+    model: async ({ system, turns }) => {
+      const s = String(system || '');
+      if (s.includes('记到哪个文件')) return JSON.stringify({ file: '备忘', block: '- 十个视频工具：HyperFrames 做动效视频；video-use 剪视频。' });
       const joined = turns.map(x => x.content).join('\n');
       assert.match(joined, /重新记一下/);
       assert.match(joined, /HyperFrames/);
@@ -189,7 +231,7 @@ test('「没有哦你重新记一下」交给模型理解，不把「没有哦�
     },
   });
   assert.match(out.output.text || '', /记好了/);
-  const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
+  const written = fs.readFileSync(path.join(memo, '备忘.md'), 'utf8');
   assert.ok(written.includes('HyperFrames'), '应记模型返回的内容');
   assert.ok(!written.includes('没有哦你重新'), '不该把修正词当内容');
 });
@@ -632,7 +674,7 @@ test('解析器先失败时交给模型兜底', async () => {
       overrides,
       model: async () => JSON.stringify({ action: 'codex', task: '从 Notion 读取计划输出到 ' + mdFile }),
     });
-    const written = fs.readFileSync(path.join(memo, '小本本.md'), 'utf8');
+    const written = fs.readFileSync(path.join(memo, '资料.md'), 'utf8');
     assert.ok(written.includes('2026-10-15'), '小本本该含 codex 拉到的文件内容，实得：' + written);
     assert.ok(written.includes('【Codex 查到】'), '该带 Codex 查到标记');
   });
@@ -641,7 +683,7 @@ test('解析器先失败时交给模型兜底', async () => {
     const memo = path.join(tmp, '小本本注入');
     const overrides = { prefix: '', roots: [tmp], memoDir: memo };
     fs.mkdirSync(memo, { recursive: true });
-    fs.writeFileSync(path.join(memo, '小本本.md'), '- 计划：用户 2026/10/15 正式离职，10-16 启动\n', 'utf8');
+    fs.writeFileSync(path.join(memo, '计划日程.md'), '- 计划：用户 2026/10/15 正式离职，10-16 启动\n', 'utf8');
     const c = ctx('那你讲讲我的计划', { overrides });
     const out = await plugin.hooks['chat.prompt'](c);
     assert.ok(out && out.system, '该返回注入后的 system');

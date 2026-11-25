@@ -302,16 +302,25 @@ class Bot {
     }
 
     if (!reminderCore.looksLikeReminder(text)) return null;
-    let parsed = reminderCore.parseReminder(text, now, tz);
-    if (!parsed) parsed = await this.reminderFromModel(text, now, tz);
-    if (!parsed) return null;
+    // 定时提醒不调模型（省钱、不联网）：规则解析不出来就让用户换个说法
+    const parsed = reminderCore.parseReminder(text, now, tz);
+    if (!parsed) {
+      return {
+        action: 'reply',
+        key,
+        msg,
+        atMe,
+        canned: '没太听懂你要提醒什么，换个说法试试？比如「10分钟后提醒我喝水」「明天八点叫我起床」。',
+        reason: 'reminder_unparsed',
+      };
+    }
 
     try {
       const item = service.add({
         wxid: msg.chatId,
         name: msg.chatTitle || msg.senderName || msg.chatId,
         chatType: msg.chatType,
-        text: parsed.what,
+        text: reminderCore.spokenText(parsed.what),
         at: parsed.at,
         atName: msg.senderName || '',
       });
@@ -326,39 +335,6 @@ class Bot {
       };
     } catch (err) {
       return { action: 'reply', key, msg, atMe, canned: '这个提醒没设上：' + ((err && err.message) || err), reason: 'reminder_error' };
-    }
-  }
-
-  /** 规则解析不出来时，让模型把时间和事情抽成 JSON（模型不可用就放弃，不瞎猜） */
-  async reminderFromModel(text, now, timeZone = '') {
-    if (!this.llm || this.llm.isMock || typeof this.llm.complete !== 'function') return null;
-    const nowText = time.formatDateTime(now.getTime(), timeZone);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
-    try {
-      const raw = await this.llm.complete({
-        system: [
-          '你是一个提醒解析器。把用户这句话里的「提醒时间」和「提醒内容」抽出来。',
-          `现在是 ${nowText}（本地时间）。只说今天/明天/后天/几点，按这个基准换成绝对时间。`,
-          '只输出 JSON，不要解释、不要代码块围栏：{"at":"YYYY-MM-DD HH:mm","what":"要提醒的事"}',
-          '如果这句话不是在让人提醒某件事，输出 {"at":"","what":""}。',
-        ].join('\n'),
-        turns: [{ role: 'user', content: String(text).slice(0, 120) }],
-        maxTokens: 120,
-        signal: controller.signal,
-      });
-      const jsonText = (String(raw || '').match(/\{[\s\S]*\}/) || [''])[0];
-      if (!jsonText) return null;
-      const obj = JSON.parse(jsonText);
-      const atMs = time.parseDateTimeLoose(obj.at, timeZone);
-      const what = String(obj.what || '').trim().slice(0, 200);
-      if (!what || atMs === null) return null;
-      if (atMs <= now.getTime()) return null;
-      return { at: new Date(atMs), what, when: obj.at };
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timer);
     }
   }
 
@@ -1989,7 +1965,10 @@ class Bot {
     // 多要点列表（换行分隔的 3~12 行）别被气泡上限和字数腰斩：按行数放宽气泡数，
     // 让每个要点完整发出去，而不是发到一半断掉。
     const listLines = String(text || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
-    const isList = !decision.diaryExpanded && (wantsFull || (listLines.length > 2 && listLines.length <= 12));
+    // 只有「带编号/项目符号」的多行才算清单（列计划/清单）；普通两三行口语回答仍按日常气泡上限走
+    const bulleted = listLines.filter((s) => /^(?:\d+[.、)）]|[-*•·]|第[一二三四五六七八九十]+[、.．])/.test(s));
+    const isList = !decision.diaryExpanded
+      && (wantsFull || (listLines.length > 2 && listLines.length <= 12 && bulleted.length >= Math.ceil(listLines.length * 0.6)));
     const bubbleCap = isList ? 8 : maxBubbles;
     // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大；列表/全文标记除外（交给 splitBubbles 按行拆）。
     if (!decision.diaryExpanded && !isList && Array.from(text).length > maxChars) {

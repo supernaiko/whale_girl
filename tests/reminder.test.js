@@ -330,7 +330,8 @@ test('对话里说「十点半提醒我开会」会落库并回一句确认', as
   const items = bot.reminders.list();
   assert.equal(items.length, 1);
   assert.equal(items[0].status, 'pending');
-  assert.equal(items[0].text, '开会');
+  // 到点说的话是模板拼的（不调模型），落库的就是最终要发的那句
+  assert.equal(items[0].text, '到点啦，该开会了～');
 });
 
 test('群里没 @ 她也能设提醒（任何人都能设）', async (t) => {

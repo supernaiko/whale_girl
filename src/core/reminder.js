@@ -278,10 +278,18 @@ function confirmText(parsed, { now = new Date(), group = false, who = '', timeZo
   return `好，${when} 提醒你${what}。${target}。`;
 }
 
+/** 提醒到点说的话：模板拼，不调模型（定时任务不花 API 钱） */
+function spokenText(what) {
+  const w = String(what || '').trim();
+  if (!w || w === '时间到了') return '时间到啦～';
+  return `到点啦，该${w}了～`;
+}
+
 module.exports = {
   parseWhen,
   parseReminder,
   looksLikeReminder,
   describeWhen,
   confirmText,
+  spokenText,
 };

@@ -752,25 +752,29 @@ function sanitizeMemoFile(name) {
   return n || '杂记';
 }
 
-// 让 deep 判断这条内容属于哪一类（记到哪个 .md）
-async function classifyMemo(whale, content) {
-  if (typeof whale !== 'object' || whale == null || typeof whale.model !== 'function') return '杂记';
-  const system = '你是记事本分类助手。判断这条内容属于哪一类，只输出 JSON：{"category":"分类名"}。' +
-    '分类只能从：账号密码、服务器、计划日程、联系信息、备忘、杂记 里选一个——' +
-    '账号/密码/登录/密钥/token 选「账号密码」；服务器/域名/网站/控制台/VPS/部署 选「服务器」；' +
-    '计划/日程/待办/目标/里程碑/安排 选「计划日程」；电话/地址/邮箱/联系方式 选「联系信息」；' +
-    '其他零散的日常小事选「备忘」；实在归不进去选「杂记」。不要解释、不要 markdown。';
+// 让 deep 决定「记到哪个文件、用什么格式、写什么内容」，不再把整段话傻塞进一个 txt
+async function planMemo(whale, content) {
+  if (typeof whale !== 'object' || whale == null || typeof whale.model !== 'function') return null;
+  const system = [
+    '你是记事本整理助手。读用户要记的这条消息，决定「记到哪个文件、用什么格式、写什么」。',
+    '只输出 JSON：{"file":"文件名（不含 .md，简短中文 2~10 字）","block":"要追加进文件的 Markdown 片段"}。',
+    '规则：',
+    '1. 文件按内容主题命名（如 账号密码 / 服务器 / 成人网站 / 计划日程 / 联系信息 / 备忘 / 杂记）；同一主题沿用同一个文件名，别每次换名。',
+    '2. 用户说「不要和 X 放一起」「单独放」「单独一类」「另外记」「别混在」——这是分类要求：按它单独建文件，别把这句要求本身写进内容。',
+    '3. 格式按内容选：网站/链接列表用「## 标题」+「- 链接」；账号密码用「- 平台：账号 / 密码」；计划用「- 日期：事项」；杂记用「- 一句话」。',
+    '4. block 只写这次要追加的内容，一条一行，不要重复已有内容，不要解释，不要代码块围栏。',
+  ].join('\n');
   try {
-    const out = await whale.model({ system, turns: [{ role: 'user', content: String(content).slice(0, 2000) }], maxTokens: 200 });
+    const out = await whale.model({ system, turns: [{ role: 'user', content: String(content).slice(0, 4000) }], maxTokens: 600 });
     const raw = typeof out === 'string' ? out : (out && (out.text || out.content)) || '';
     const m = String(raw).match(/\{[\s\S]*\}/);
-    if (m) {
-      const j = JSON.parse(m[0]);
-      const c = String(j && j.category || '').trim();
-      if (MEMO_CATEGORIES.includes(c)) return c;
-    }
-  } catch { /* 分类失败回退杂记 */ }
-  return '杂记';
+    if (!m) return null;
+    const j = JSON.parse(m[0]);
+    const file = String(j && j.file || '').trim();
+    const block = String(j && j.block || '').trim();
+    if (!file || !block) return null;
+    return { file: sanitizeMemoFile(file), block };
+  } catch { return null; }
 }
 
 async function rememberText(settings, content, whale) {
@@ -780,10 +784,19 @@ async function rememberText(settings, content, whale) {
   if (!dir) return '小本本不在允许的目录里，建不了：' + memoFolder(settings);
   try {
     await fsp.mkdir(dir, { recursive: true });
-    const category = await classifyMemo(whale, text);
-    const file = path.join(dir, sanitizeMemoFile(category) + '.md');
+    const plan = await planMemo(whale, text);
+    const name = plan ? plan.file : '杂记';
     const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
-    await fsp.appendFile(file, '- ' + stamp + ' ' + text.replace(/\r?\n/g, ' ') + '\n', 'utf8');
+    // 模型没给出结构时，退回「- 时间 原文」的简单格式
+    const block = plan
+      ? String(plan.block).replace(/\r?\n{3,}/g, '\n\n').trim()
+      : '- ' + stamp + ' ' + text.replace(/\r?\n/g, ' ');
+    const file = path.join(dir, name + '.md');
+    const exists = fs.existsSync(file);
+    const prev = exists ? await fsp.readFile(file, 'utf8') : '';
+    if (prev.includes(block)) return '这条已经记过了，在 ' + file + ' 里。';
+    const head = exists ? '' : '# ' + name + '\n\n';
+    await fsp.appendFile(file, head + block + '\n', 'utf8');
     return '记好了，写进 ' + file + ' 了。（' + text.length + ' 字）';
   } catch (error) {
     return '写小本本失败：' + error.message;
