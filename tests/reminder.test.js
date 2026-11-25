@@ -357,6 +357,57 @@ test('「取消提醒」和「提醒列表」都能用', async (t) => {
   assert.equal(bot.reminders.pendingFor('wxid_a').length, 0);
 });
 
+test('周期提醒：每天/每周/工作日都能解析，回执带周期', (t) => {
+  const now = new Date('2026-11-26T01:00:00+08:00'); // 周四
+  const tz = 'Asia/Shanghai';
+  const daily = reminder.parseReminder('每天11点提醒我学习', now, tz);
+  assert.equal(daily.repeat.kind, 'daily');
+  assert.equal(daily.what, '学习');
+  assert.equal(reminder.repeatLabel(daily.repeat), '每天');
+  assert.match(reminder.confirmText(daily, { now, group: false, who: '', timeZone: tz }), /每天 11:00/);
+
+  const weekly = reminder.parseReminder('每周一早上九点提醒我开会', now, tz);
+  assert.deepEqual(weekly.repeat, { kind: 'weekly', weekday: 1 });
+  assert.equal(new Date(weekly.at).getDay(), 1);
+
+  const wd = reminder.parseReminder('工作日晚上八点提醒我复盘', now, tz);
+  assert.equal(wd.repeat.kind, 'weekdays');
+  assert.ok([1, 2, 3, 4, 5].includes(new Date(wd.at).getDay()));
+
+  assert.equal(reminder.parseReminder('明天八点叫我起床', now, tz).repeat, null, '普通提醒没有 repeat');
+});
+
+test('周期提醒发完自动排下一次', (t) => {
+  const { config } = fixture(t);
+  const clock = { ms: NOW.getTime() };
+  const svc = serviceAt(config, clock);
+  const item = svc.add({ wxid: 'wxid_a', text: '到点啦，该学习啦～', at: clock.ms + 1000, repeat: { kind: 'daily' } });
+  clock.ms += 2000;
+  const due = svc.due();
+  assert.equal(due.length, 1);
+  svc.ack(due[0].id, { ok: true });
+  const after = svc.list().find((x) => x.id === item.id);
+  assert.equal(after.status, 'pending', '自动排下一次');
+  assert.ok(after.dueAt - clock.ms > 20 * 60 * 60 * 1000, '下一次大约一天后');
+});
+
+test('按内容取消 / 改时间', async (t) => {
+  const { config } = fixture(t);
+  const { bot } = makeBot(t, config);
+  const msg = (text) => ({ platform: 'wechat', chatId: 'wxid_a', chatType: 'private', senderId: 'u1', senderName: '阿螈', text });
+  await bot.decide(msg('每天11点提醒我学习'));
+  await bot.decide(msg('明天八点提醒我买菜'));
+  assert.equal(bot.reminders.pendingFor('wxid_a').length, 2);
+  const cancel = await bot.decide(msg('取消每天11点提醒学习'));
+  assert.match(cancel.canned, /取消了 1 条/);
+  const left = bot.reminders.pendingFor('wxid_a');
+  assert.equal(left.length, 1);
+  assert.match(left[0].text, /买菜/);
+  const change = await bot.decide(msg('把提醒改成12点'));
+  assert.match(change.canned, /改好了/);
+  assert.equal(new Date(bot.reminders.pendingFor('wxid_a')[0].dueAt).getHours(), 12);
+});
+
 test('普通聊天不会被提醒分支吃掉', async (t) => {
   const { config } = fixture(t);
   const { bot } = makeBot(t, config);

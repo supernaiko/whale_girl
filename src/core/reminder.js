@@ -93,6 +93,24 @@ function applyPeriod(hour, period) {
 
 const REL_RE = /([零一二两三四五六七八九十\d]{1,3})\s*(秒钟?|分钟|分|个?小时|钟头)\s*(?:之?后|以后)/;
 const DAY_RE = /(大后天|后天|明天|明早|明晚|今天|今早|今晚|今儿|当天)/;
+/** 周期提醒：每天 / 每周X / 工作日 */
+const REPEAT_RE = /(每天|每日|天天|每(?:个)?(?:周|星期)([一二三四五六日天])|工作日)/;
+
+/** 0=周日 … 6=周六 */
+function weekdayOf(p) {
+  return new Date(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day))).getUTCDay();
+}
+
+function repeatLabel(repeat) {
+  if (!repeat) return '';
+  if (repeat.kind === 'daily') return '每天';
+  if (repeat.kind === 'weekdays') return '工作日';
+  if (repeat.kind === 'weekly') {
+    const names = ['日', '一', '二', '三', '四', '五', '六'];
+    return `每周${names[Number(repeat.weekday) % 7]}`;
+  }
+  return '';
+}
 
 function dayOffset(word) {
   if (!word) return 0;
@@ -152,6 +170,39 @@ function parseWhen(text, now = new Date(), timeZone = '') {
   const period = periodOf(raw) || (/明晚|今晚|晚上/.test(dayWord) ? [18, 23] : null);
   let hour = applyPeriod(clock.hour, period);
   if (hour > 23 || hour < 0) return null;
+
+  // ②b 周期提醒：每天 / 每周X / 工作日 + 几点（「每天11点提醒我学习」）
+  const repeatHit = raw.match(REPEAT_RE);
+  if (repeatHit) {
+    const word = repeatHit[0];
+    const p0 = time.parts(now.getTime(), timeZone);
+    const stamp = (base) => time.toEpoch({ ...base, hour, minute: clock.minute, second: 0 }, timeZone);
+    let at = stamp(p0);
+    let repeat;
+    if (/工作日/.test(word)) {
+      repeat = { kind: 'weekdays' };
+      for (let i = 0; i < 9; i += 1) {
+        const cur = time.addDays(p0, i);
+        const wd = weekdayOf(cur);
+        if (wd >= 1 && wd <= 5 && stamp(cur) > now.getTime()) { at = stamp(cur); break; }
+      }
+    } else if (/每天|每日|天天/.test(word)) {
+      repeat = { kind: 'daily' };
+      if (at <= now.getTime()) at = stamp(time.addDays(p0, 1));
+    } else {
+      const idx = '一二三四五六日天'.indexOf(repeatHit[2]);
+      const want = idx === 6 ? 0 : idx + 1;
+      repeat = { kind: 'weekly', weekday: want };
+      const delta = (want - weekdayOf(p0) + 7) % 7;
+      at = stamp(time.addDays(p0, delta === 0 && at <= now.getTime() ? 7 : delta));
+    }
+    return {
+      at: new Date(at),
+      rest: raw.replace(word, '').replace(clock.raw, ''),
+      matched: word + clock.raw,
+      repeat,
+    };
+  }
   const offset = dayOffset(dayWord);
   const base = time.addDays(time.parts(now.getTime(), timeZone), offset);
   let at = time.toEpoch({ ...base, hour, minute: clock.minute, second: 0 }, timeZone);
@@ -214,7 +265,7 @@ function extractWhat(text) {
   const intent = strong || /别忘记|别忘了|别忘|提醒/.exec(s);
   if (intent) {
     let after = s.slice(intent.index + intent[0].length);
-    after = after.replace(REL_RE, '').replace(DAY_RE, '');
+    after = after.replace(REL_RE, '').replace(DAY_RE, '').replace(REPEAT_RE, '');
     const clock = parseClockPhrase(after);
     if (clock) after = after.replace(clock.raw, '');
     after = after.replace(/(凌晨|早上|早晨|清晨|上午|中午|晌午|下午|午后|傍晚|黄昏|晚上|夜里|今晚|明晚)/g, '');
@@ -224,7 +275,7 @@ function extractWhat(text) {
   }
 
   // 意图词在句末（「明天开会提醒我」）：先去掉时间短语，剩下的就是内容。
-  s = s.replace(REL_RE, '').replace(DAY_RE, '');
+  s = s.replace(REL_RE, '').replace(DAY_RE, '').replace(REPEAT_RE, '');
   const clock = parseClockPhrase(s);
   if (clock) s = s.replace(clock.raw, '');
   s = s.replace(/(凌晨|早上|早晨|清晨|上午|中午|晌午|下午|午后|傍晚|黄昏|晚上|夜里|今晚|明晚)/g, '');
@@ -246,7 +297,7 @@ function parseReminder(text, now = new Date(), timeZone = '') {
   if (!when) return null;
   const what = extractWhat(text);
   if (!what || what.length < 1) return null;
-  return { at: when.at, what, when: when.matched || '', relative: when.relative || '' };
+  return { at: when.at, what, when: when.matched || '', relative: when.relative || '', repeat: when.repeat || null };
 }
 
 /** 「今天 20:30」/「明天 08:00」这种人话 */
@@ -267,11 +318,17 @@ function describeWhen(at, now = new Date(), timeZone = '') {
 
 /** 设好提醒之后的回执（不经过模型，保证时间和事情都对） */
 function confirmText(parsed, { now = new Date(), group = false, who = '', timeZone = '' } = {}) {
-  const { at, what, relative } = parsed;
+  const { at, what, relative, repeat } = parsed;
   // 倒计时显示相对时长（「过 1 分钟 叫你」），不报绝对时钟
   if (relative) {
     const action = what === '时间到了' ? '叫你' : `提醒你${what}`;
     return `好，过 ${relative} ${action}。`;
+  }
+  // 周期提醒：直接说「每天 11:00 提醒你学习」
+  if (repeat) {
+    const clock = time.formatClock(time.minutesOfDay(at.getTime(), timeZone));
+    const target = group && who ? `到点我会在群里 @${who}` : '到点我在这里提醒你';
+    return `好，${repeatLabel(repeat)} ${clock} 提醒你${what}。${target}。`;
   }
   const when = describeWhen(at, now, timeZone);
   const target = group && who ? `到点我会在群里 @${who}` : '到点我在这里提醒你';
@@ -285,6 +342,23 @@ function spokenText(what) {
   return `到点啦，该${w}了～`;
 }
 
+/**
+ * 从「每天11点提醒学习」这类话里抽出关键词，用来匹配已有提醒。
+ * 去掉周期词、时间词和口水词，留下能对上内容的部分。
+ */
+function reminderKeys(text) {
+  return String(text || '')
+    .replace(REPEAT_RE, ' ')
+    .replace(/[零一二两三四五六七八九十\d]{1,3}\s*(?:点|时|:|：)\s*[零一二两三四五六七八九十\d]{0,3}/g, ' ')
+    .replace(/\d{1,2}:\d{2}/g, ' ')
+    .replace(/(?:改成|改到|改为|换成|换到|推到|挪到)/g, ' ')
+    .replace(/(?:取消|删除|清空|删掉|去掉|改|换|推|挪|成|到|为|把|将)/g, ' ')
+    .replace(/(?:提醒|一下|一声|我|你|的|了|在|要|这条|那条|这个|那个)/g, ' ')
+    .split(/[\s,，。.!！~～、]+/)
+    .map((w) => w.trim())
+    .filter((w) => w.length >= 2);
+}
+
 module.exports = {
   parseWhen,
   parseReminder,
@@ -292,4 +366,6 @@ module.exports = {
   describeWhen,
   confirmText,
   spokenText,
+  repeatLabel,
+  reminderKeys,
 };

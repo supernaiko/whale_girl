@@ -34,6 +34,30 @@ const ACTIVE = new Set(['pending', 'retrying', 'sending']);
 const DONE = new Set(['done', 'failed', 'expired', 'cancelled', 'unconfirmed']);
 
 /**
+ * 周期提醒的下一次时间：沿用这条提醒原来的「时:分」，从 fromMs 往后找第一个符合周期的日子。
+ * 用日历加法算，避免 +24h 在夏令时切换日漂移一小时。
+ */
+function nextRepeatAt(item, fromMs, timeZone) {
+  const repeat = item && item.repeat;
+  if (!repeat) return 0;
+  const prev = time.parts(Number(item.dueAt) || fromMs, timeZone);
+  const hour = Number(prev.hour) || 0;
+  const minute = Number(prev.minute) || 0;
+  const base = time.parts(fromMs, timeZone);
+  for (let i = 0; i < 400; i += 1) {
+    const cur = time.addDays(base, i);
+    const wd = new Date(Date.UTC(Number(cur.year), Number(cur.month) - 1, Number(cur.day))).getUTCDay();
+    let ok = true;
+    if (repeat.kind === 'weekdays') ok = wd >= 1 && wd <= 5;
+    else if (repeat.kind === 'weekly') ok = wd === Number(repeat.weekday) % 7;
+    if (!ok) continue;
+    const at = time.toEpoch({ ...cur, hour, minute, second: 0 }, timeZone);
+    if (at > fromMs) return at;
+  }
+  return 0;
+}
+
+/**
  * 提醒的「规则」：和主动搭话同语义（每天上限 / 刚聊过先跳过），但配置独立
  * （config.reminder.*），界面也是独立的一页。
  *
@@ -152,7 +176,7 @@ class ReminderService {
    * 新建提醒。任何人都能用（群友也行），但限流：同一会话最多 20 条未发、全局 500 条。
    * 规则和主动搭话一致：总开关、时间段、每天上限（这些都能在「提醒」页里单独改）。
    */
-  add({ wxid, name = '', chatType = 'private', text, at, atName = '', createdAt } = {}) {
+  add({ wxid, name = '', chatType = 'private', text, at, atName = '', createdAt, repeat = null } = {}) {
     const chatId = clean(wxid, 120);
     const what = clean(text, 200);
     const dueAt = at instanceof Date ? at.getTime() : Number(at);
@@ -185,6 +209,10 @@ class ReminderService {
       claimedAt: 0,
       retryAt: 0,
       finishedAt: 0,
+      // 周期提醒（每天/每周X/工作日）：发完自动排下一次
+      repeat: repeat && typeof repeat === 'object'
+        ? { kind: String(repeat.kind || ''), weekday: Number(repeat.weekday) || 0 }
+        : null,
     };
     const previous = JSON.parse(JSON.stringify(this.items));
     this.items.push(item);
@@ -405,6 +433,19 @@ class ReminderService {
       item.finishedAt = now;
       // 日记正文已经落在 data/diary/，发送成功后不再在 reminders.json 里留一份全文。
       if (item.kind === 'diary') item.text = '（日记已发送）';
+      // 周期提醒：发完立刻排下一次（每天/每周X/工作日）
+      if (item.repeat) {
+        const next = nextRepeatAt(item, now, time.resolveTimeZone(this.config));
+        if (next) {
+          item.status = 'pending';
+          item.dueAt = next;
+          item.claimedAt = 0;
+          item.retryAt = 0;
+          item.finishedAt = 0;
+          item.attempts = 0;
+          item.error = '';
+        }
+      }
     } else if (item.kind === 'plugin') {
       item.status = 'unconfirmed';
       item.error = '未确认发送成功；不自动重发';
@@ -417,6 +458,29 @@ class ReminderService {
       item.status = 'failed';
       item.error = clean(error, 200) || '发送失败';
       item.finishedAt = now;
+    }
+    this.commit(previous);
+    return { ok: true, item: { ...item } };
+  }
+
+  /** 改时间（周期提醒可同时改周期），其余字段不动 */
+  reschedule(id, { at, repeat = undefined } = {}) {
+    const item = this.items.find((it) => it.id === String(id || ''));
+    if (!item) return { ok: false, error: '找不到这条提醒', statusCode: 404 };
+    if (!ACTIVE.has(item.status)) return { ok: false, error: '这条提醒已经结束了', statusCode: 409 };
+    const dueAt = at instanceof Date ? at.getTime() : Number(at);
+    if (!Number.isFinite(dueAt) || dueAt <= this.now()) return { ok: false, error: '新时间已经过了', statusCode: 400 };
+    const previous = JSON.parse(JSON.stringify(this.items));
+    item.dueAt = dueAt;
+    item.retryAt = 0;
+    item.claimedAt = 0;
+    item.attempts = 0;
+    item.status = 'pending';
+    item.finishedAt = 0;
+    if (repeat !== undefined) {
+      item.repeat = repeat && typeof repeat === 'object'
+        ? { kind: String(repeat.kind || ''), weekday: Number(repeat.weekday) || 0 }
+        : null;
     }
     this.commit(previous);
     return { ok: true, item: { ...item } };

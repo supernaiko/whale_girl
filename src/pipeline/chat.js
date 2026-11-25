@@ -282,22 +282,76 @@ class Bot {
     const text = String((clean && clean.text) || '').trim();
     if (!text || text.length > 120) return null;
 
-    // 取消 / 查看：只处理「取消提醒」「提醒列表」这种整句
-    if (/^(?:取消|删除|清空)(?:所有|全部)?提醒[。.!！~～]*$/.test(text)) {
+    // 取消 / 查看：支持「取消提醒」「取消所有提醒」「取消每天11点提醒学习」
+    const cancelHit = /^(?:取消|删除|清空|删掉|去掉)\s*([\s\S]*?)提醒(?!列表|清单)([\s\S]*)$/.exec(text);
+    if (cancelHit) {
       if (isGroup && !isVerifiedOwner(this.config, msg)) {
         return { action: 'reply', key, msg, atMe, canned: '群里的提醒统一由已绑定 ID 的主人取消，避免误删其他人的提醒。', reason: 'not_owner' };
       }
       const pending = service.pendingFor(msg.chatId);
       if (!pending.length) return { action: 'reply', key, msg, atMe, canned: '这个会话没有待发的提醒。', reason: 'reminder_cancel' };
+      const rawTarget = `${cancelHit[1] || ''} ${cancelHit[2] || ''}`.trim();
+      const all = !rawTarget || /所有|全部|都/.test(rawTarget);
+      let targets = pending;
+      if (!all) {
+        const keys = reminderCore.reminderKeys(rawTarget);
+        if (keys.length) {
+          const hit = pending.filter((it) => keys.some((k) => String(it.text || '').includes(k)));
+          if (!hit.length) {
+            const shown = pending.slice(0, 5).map((it) => it.text).join('；');
+            return { action: 'reply', key, msg, atMe, canned: `没找到和「${keys.join('/')}」有关的提醒。现在有：${shown}`, reason: 'reminder_cancel_miss' };
+          }
+          targets = hit;
+        }
+      }
       let cancelled = 0;
-      for (const item of pending) if (service.cancel(item.id).ok) cancelled += 1;
-      const sending = pending.length - cancelled;
+      for (const item of targets) if (service.cancel(item.id).ok) cancelled += 1;
+      const sending = targets.length - cancelled;
       return { action: 'reply', key, msg, atMe, canned: `取消了 ${cancelled} 条提醒。${sending ? `另有 ${sending} 条正在发送，无法保证撤回，请等待发送结果。` : ''}`, reason: 'reminder_cancel' };
+    }
+    // 改时间：「把每天11点的提醒改成12点」「提醒改成下午三点」
+    const changeHit = /([\s\S]*?)提醒\s*(?:改|换|推|挪)(?:成|到|为)?\s*([\s\S]+)$/.exec(text);
+    if (changeHit) {
+      const pending = service.pendingFor(msg.chatId);
+      if (!pending.length) return { action: 'reply', key, msg, atMe, canned: '这个会话没有待发的提醒。', reason: 'reminder_reschedule' };
+      const keys = reminderCore.reminderKeys(changeHit[1]);
+      let targets = pending;
+      if (keys.length) {
+        const hit = pending.filter((it) => keys.some((k) => String(it.text || '').includes(k)));
+        if (!hit.length) {
+          return { action: 'reply', key, msg, atMe, canned: `没找到和「${keys.join('/')}」有关的提醒。`, reason: 'reminder_reschedule' };
+        }
+        targets = hit;
+      } else if (pending.length > 1) {
+        return { action: 'reply', key, msg, atMe, canned: '有好几条提醒，要改哪条？说个关键词，或者说「提醒列表」看看。', reason: 'reminder_reschedule' };
+      }
+      const when = reminderCore.parseWhen(changeHit[2], now, tz);
+      if (!when) {
+        return { action: 'reply', key, msg, atMe, canned: '新时间没听懂，说个具体时间？比如「改成明天八点」「改成12点」。', reason: 'reminder_reschedule' };
+      }
+      let changed = 0;
+      for (const item of targets) {
+        if (service.reschedule(item.id, { at: when.at, repeat: when.repeat || undefined }).ok) changed += 1;
+      }
+      if (!changed) {
+        return { action: 'reply', key, msg, atMe, canned: '没改成，可能新时间已经过了。', reason: 'reminder_reschedule' };
+      }
+      const rep = reminderCore.repeatLabel(when.repeat);
+      const label = rep
+        ? `${rep} ${String(when.at.getHours()).padStart(2, '0')}:${String(when.at.getMinutes()).padStart(2, '0')}`
+        : reminderCore.describeWhen(when.at, now, tz);
+      return { action: 'reply', key, msg, atMe, canned: `改好了：${label}。`, reason: 'reminder_reschedule' };
     }
     if (/^(?:提醒列表|我的提醒|有哪些提醒)[。.!！~～?？]*$/.test(text)) {
       const pending = service.pendingFor(msg.chatId);
       if (!pending.length) return { action: 'reply', key, msg, atMe, canned: '这会儿没有待发的提醒。', reason: 'reminder_list' };
-      const lines = pending.slice(0, 5).map((it) => `${reminderCore.describeWhen(new Date(it.dueAt), now, tz)} ${it.text}`);
+      const lines = pending.slice(0, 5).map((it) => {
+        const rep = reminderCore.repeatLabel(it.repeat);
+        const when = rep
+          ? `${rep} ${String(new Date(it.dueAt).getHours()).padStart(2, '0')}:${String(new Date(it.dueAt).getMinutes()).padStart(2, '0')}`
+          : reminderCore.describeWhen(new Date(it.dueAt), now, tz);
+        return `${when} ${it.text}`;
+      });
       return { action: 'reply', key, msg, atMe, canned: '还有这些：' + lines.join('；'), reason: 'reminder_list' };
     }
 
@@ -322,6 +376,7 @@ class Bot {
         chatType: msg.chatType,
         text: reminderCore.spokenText(parsed.what),
         at: parsed.at,
+        repeat: parsed.repeat || null,
         atName: msg.senderName || '',
       });
       this.logger && this.logger.info(`提醒已登记：id=${item.id} ${textMeta(item.text)} @ ${reminderCore.describeWhen(new Date(item.dueAt), now, tz)}`);
